@@ -1,0 +1,16 @@
+node_modules
+.env
+.zenith/npm
+.zenith/git
+.zenith/sessions
+.zenith/schedule-prompts.json
+dist
+*.tgz
+outputs/*
+!outputs/.gitkeep
+papers/*
+!papers/.gitkeep
+notes/*
+!notes/.gitkeep
+experiments/*
+!experiments/.gitkeep
