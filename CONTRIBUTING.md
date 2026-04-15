@@ -4,10 +4,10 @@ Zenith is a research-first CLI built on Pi and alphaXiv. This guide is for human
 
 ## Quick Links
 
-- GitHub: https://github.com/zenith-agent/zenith
+- GitHub: https://github.com/pkmdev-sec/zenith
 - Docs: https://zenith.is/docs
 - Repo agent contract: [AGENTS.md](AGENTS.md)
-- Issues: https://github.com/zenith-agent/zenith/issues
+- Issues: https://github.com/pkmdev-sec/zenith/issues
 
 ## What Goes Where
 
