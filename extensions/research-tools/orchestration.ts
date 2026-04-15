@@ -728,4 +728,141 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			};
 		},
 	});
+
+	// ── Tool 4: log_agent_spawn ────────────────────────
+
+	pi.registerTool({
+		name: "log_agent_spawn",
+		description: "REQUIRED before spawning each subagent. Checks budget limits and either approves or blocks the spawn.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Swarm slug" }),
+			agentName: Type.String({ description: "Agent template name" }),
+			agentId: Type.String({ description: "Unique ID for this agent instance" }),
+		}),
+		async execute(_id, params) {
+			const cwd = process.cwd();
+			const swarmDir = getSwarmDir(cwd, params.slug);
+			const eventsPath = getEventsPath(swarmDir);
+			const events = readEvents(eventsPath);
+
+			const initEvent = events.find(e => e.type === "swarm_init");
+			const maxAgents = (initEvent?.maxAgents as number) ?? 200;
+			const settingsMax = parseInt(process.env.ZENITH_MAX_AGENTS ?? "", 10) || maxAgents;
+			const effectiveMax = Math.min(maxAgents, settingsMax);
+
+			const spawned = events.filter(e => e.type === "agent_spawn").length;
+
+			if (spawned >= effectiveMax) {
+				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "budget_exceeded", reason: "agent_limit", spawned, limit: effectiveMax, blocked: params.agentId });
+				return {
+					content: [{ type: "text", text: `BUDGET_EXCEEDED: Agent limit reached (${spawned}/${effectiveMax}). Do NOT spawn more agents. Proceed to synthesis with available results.` }],
+					details: { approved: false, spawned, limit: effectiveMax },
+				};
+			}
+
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_spawn", agent: params.agentName, id: params.agentId });
+			return {
+				content: [{ type: "text", text: `APPROVED: Agent ${spawned + 1} of ${effectiveMax} (${params.agentName}:${params.agentId})` }],
+				details: { approved: true, spawned: spawned + 1, limit: effectiveMax },
+			};
+		},
+	});
+
+	// ── Tool 5: phase_gate ─────────────────────────────
+
+	pi.registerTool({
+		name: "phase_gate",
+		description: "REQUIRED before advancing to the next swarm phase. Validates the current phase is complete enough to proceed.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Swarm slug" }),
+			nextPhase: Type.String({ description: "Phase to transition to" }),
+		}),
+		async execute(_id, params) {
+			const PHASE_ORDER = ["scout", "research", "debate", "verify", "build"];
+			const READY_THRESHOLDS: Record<string, number> = { scout: 1.0, research: 0.6, debate: 0.7, verify: 0.8, build: 1.0 };
+
+			const cwd = process.cwd();
+			const swarmDir = getSwarmDir(cwd, params.slug);
+			const eventsPath = getEventsPath(swarmDir);
+			const events = readEvents(eventsPath);
+
+			// Find current phase
+			const phaseStarts = events.filter(e => e.type === "phase_start" || e.type === "phase_transition");
+			const currentPhase = phaseStarts.length > 0 ? String(phaseStarts[phaseStarts.length - 1]!.phase) : "none";
+
+			const currentIdx = PHASE_ORDER.indexOf(currentPhase);
+			const nextIdx = PHASE_ORDER.indexOf(params.nextPhase);
+
+			if (nextIdx === -1) {
+				return { content: [{ type: "text", text: `BLOCKED: Unknown phase '${params.nextPhase}'. Valid phases: ${PHASE_ORDER.join(", ")}` }], details: { approved: false } };
+			}
+
+			if (nextIdx > currentIdx + 1) {
+				const skipped = PHASE_ORDER.slice(currentIdx + 1, nextIdx).join(", ");
+				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${params.nextPhase}'.` }], details: { approved: false } };
+			}
+
+			// Check readyThreshold for current phase
+			if (currentPhase !== "none" && currentIdx >= 0) {
+				const threshold = READY_THRESHOLDS[currentPhase] ?? 0.6;
+				const phaseAgents = events.filter(e => e.type === "agent_spawn" && String(e.phase ?? currentPhase) === currentPhase).length;
+				const phaseComplete = events.filter(e => (e.type === "agent_complete" || e.type === "agent_failed") && String(e.phase ?? currentPhase) === currentPhase).length;
+				const completionRate = phaseAgents > 0 ? phaseComplete / phaseAgents : 1.0;
+
+				if (completionRate < threshold) {
+					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish.` }], details: { approved: false, completionRate, threshold } };
+				}
+			}
+
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "phase_transition", from: currentPhase, phase: params.nextPhase });
+			return { content: [{ type: "text", text: `APPROVED: Advancing to phase '${params.nextPhase}' (${currentPhase} was ${currentPhase === "none" ? "initial" : "ready"})` }], details: { approved: true, from: currentPhase, to: params.nextPhase } };
+		},
+	});
+
+	// ── Tool 6: deliver_artifact ───────────────────────
+
+	pi.registerTool({
+		name: "deliver_artifact",
+		description: "REQUIRED to finalize a swarm research deliverable. Runs structural citation verification before allowing delivery.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Swarm slug" }),
+			artifactPath: Type.String({ description: "Path to the final research artifact" }),
+		}),
+		async execute(_id, params) {
+			const cwd = process.cwd();
+			const swarmDir = getSwarmDir(cwd, params.slug);
+			const eventsPath = getEventsPath(swarmDir);
+			const fullPath = resolve(cwd, params.artifactPath);
+
+			if (!existsSync(fullPath)) {
+				return { content: [{ type: "text", text: `DELIVERY_BLOCKED: Artifact not found at ${params.artifactPath}` }], details: { delivered: false } };
+			}
+
+			const content = readFileSync(fullPath, "utf8");
+
+			// Structural citation check
+			const inlineCitations = content.match(/\[(\d+)\]/g) ?? [];
+			const citedNumbers = new Set(inlineCitations.map(c => parseInt(c.replace(/[\[\]]/g, ""), 10)));
+			const hasSourcesSection = /^#+\s*Sources/mi.test(content);
+			const sourceEntries = content.match(/^\d+\.\s/gm) ?? [];
+
+			const issues: string[] = [];
+			if (citedNumbers.size === 0) issues.push("No inline citations [N] found");
+			if (!hasSourcesSection) issues.push("No Sources section found");
+			if (sourceEntries.length === 0 && citedNumbers.size > 0) issues.push("Citations exist but Sources section has no numbered entries");
+			if (content.length < 500) issues.push("Artifact is suspiciously short (<500 chars)");
+
+			if (issues.length > 0) {
+				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues });
+				return { content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:
+${issues.map(i => `  - ${i}`).join("
+")}
+
+Run verify_citations and fix, then call deliver_artifact again.` }], details: { delivered: false, issues } };
+			}
+
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivered", artifact: params.artifactPath, citations: citedNumbers.size, sources: sourceEntries.length });
+			return { content: [{ type: "text", text: `DELIVERED: ${params.artifactPath} (${citedNumbers.size} citations, ${sourceEntries.length} sources). Quality gate passed.` }], details: { delivered: true, citations: citedNumbers.size, sources: sourceEntries.length } };
+		},
+	});
 }

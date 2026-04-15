@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,7 @@ import { printSearchStatus } from "./search/commands.js";
 import { runDoctor, runStatus } from "./setup/doctor.js";
 import { setupPreviewDependencies } from "./setup/preview.js";
 import { runSetup } from "./setup/setup.js";
-import { ASH, printAsciiHeader, printInfo, printPanel, printSection, RESET, SAGE } from "./ui/terminal.js";
+import { ASH, printAsciiHeader, printInfo, printPanel, printSection, printSuccess, RESET, SAGE } from "./ui/terminal.js";
 import { createModelRegistry } from "./model/registry.js";
 import {
 	readPromptSpecs,
@@ -333,6 +333,8 @@ export async function main(): Promise<void> {
 	normalizeZenithSettings(zenithSettingsPath, bundledSettingsPath, thinkingLevel, zenithAuthPath);
 
 	const zenithSettings = readJson(zenithSettingsPath);
+	process.env.ZENITH_MAX_AGENTS = String((zenithSettings.swarm as Record<string, unknown>)?.maxAgentsPerRequest ?? 200);
+	process.env.ZENITH_BUDGET_MULTIPLIER = String((zenithSettings.swarm as Record<string, unknown>)?.budgetMultiplier ?? 1.0);
 	const swarmDefault = (zenithSettings.swarm as any)?.swarmDefault !== false;
 	const isDirect = values.direct === true;
 
@@ -431,6 +433,22 @@ export async function main(): Promise<void> {
 
 	if (command === "alpha") {
 		await handleAlphaCommand(rest[0]);
+		return;
+	}
+
+	if (command === "sync") {
+		const forceFlag = rest.includes("--force");
+		if (forceFlag) {
+			const { getBootstrapStatePath } = await import("./config/paths.js");
+			const statePath = getBootstrapStatePath(zenithHome);
+			if (existsSync(statePath)) { rmSync(statePath, { force: true }); }
+			for (const sub of ["skills", "agents", "themes"]) {
+				const dir = resolve(zenithAgentDir, sub);
+				if (existsSync(dir)) { rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true }); }
+			}
+		}
+		const result = syncBundledAssets(appRoot, zenithAgentDir);
+		printSuccess(`Synced: ${result.copied.length} copied, ${result.updated.length} updated, ${result.skipped.length} skipped`);
 		return;
 	}
 
