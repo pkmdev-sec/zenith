@@ -27,7 +27,7 @@ Everything below applies only when `isResearch` is true.
 
 Derive a `<slug>` from the request (lowercase, hyphens, ≤5 words).
 
-Use `run_swarm` to prepare the swarm directory infrastructure at `outputs/.swarm/<slug>/`.
+Use `run_swarm` to prepare the swarm directory infrastructure at `~/research/<slug>/`.
 
 Decompose the query into 10-30 sub-questions:
 - If `classify_intent` returned confidence < 0.7 → use the `coordinator` subagent for decomposition
@@ -41,13 +41,13 @@ Determine scale:
 - **broad** (100-200 agents) — default for most research questions
 - **expensive** (300-500 agents) — for interdisciplinary topics spanning 10+ domains
 
-Save plan to `outputs/.plans/<slug>-orchestrate.md`. `save_checkpoint` stage='plan'.
+Save plan to `~/research/<slug>/<slug>-orchestrate.plan.md`. `save_checkpoint` stage='plan'.
 
 ## Phase 1: SCOUT
 
 Spawn a `scout` agent for landscape reconnaissance:
 ```
-{ agent: "scout", task: "Survey the research landscape for: <request>. Identify key domains, seminal papers, active debates, and recent developments. Write to outputs/.swarm/<slug>/scout.md", clarify: false }
+{ agent: "scout", task: "Survey the research landscape for: <request>. Identify key domains, seminal papers, active debates, and recent developments. Write to ~/research/<slug>/scout.md", clarify: false }
 ```
 
 Read scout output before proceeding — it informs agent assignments in Phase 2.
@@ -59,7 +59,7 @@ Each agent gets a unique combination of domain/lens/stance/search-strategy.
 Use `async: true, clarify: false` for all agents.
 
 ```
-{ agent: "swarm-researcher", task: "...", output: "outputs/.swarm/<slug>/research/{agent-id}.md", async: true, clarify: false }
+{ agent: "swarm-researcher", task: "...", output: "~/research/<slug>/research/{agent-id}.md", async: true, clarify: false }
 ```
 
 Between batches, use `swarm_status` to check progress and budget.
@@ -85,7 +85,7 @@ Spawn 10-15 agents across two groups:
 - `debate-agent` with Methodology Critic dimension — Are cited studies sound? Sample sizes? Controls?
 - `bias-detector` — Identify systematic biases in the swarm's collective output
 
-Each writes to `outputs/.swarm/<slug>/debate/{role}.md`.
+Each writes to `~/research/<slug>/debate/{role}.md`.
 Use `async: true, clarify: false`. `save_checkpoint` stage='debate'.
 
 ## Phase 4: VERIFICATION
@@ -96,7 +96,7 @@ Each verifier independently:
 2. Uses `scholar_search` to find corroborating or contradicting evidence for key claims
 3. Produces per-claim verdicts: VERIFIED | UNVERIFIED | CONTRADICTED | DEAD
 
-Each writes to `outputs/.swarm/<slug>/verify/{verifier-id}.md`.
+Each writes to `~/research/<slug>/verify/{verifier-id}.md`.
 `save_checkpoint` stage='verify'.
 
 ## Phase 5: BUILD
@@ -104,17 +104,17 @@ Each writes to `outputs/.swarm/<slug>/verify/{verifier-id}.md`.
 Run a sequential builder chain — each step feeds the next:
 
 1. **`synthesizer`** — Reads all research, debate, and verification outputs. Produces a
-   structured synthesis with confidence scores per claim. Writes `outputs/.swarm/<slug>/synthesis.md`.
+   structured synthesis with confidence scores per claim. Writes `~/research/<slug>/synthesis.md`.
 
 2. **`writer`** — Transforms the synthesis into a polished research brief with: Executive Summary,
    High-Confidence Findings, Active Debates, Emerging Signals, Flagged Claims, Research Gaps,
-   Confidence Map, Methodology, and Sources. Writes `outputs/.drafts/<slug>-draft.md`.
+   Confidence Map, Methodology, and Sources. Writes `~/research/<slug>/<slug>-draft.md`.
 
 3. **`verifier`** — Adds inline citations, verifies every source URL, builds the numbered
-   Sources section. Writes `outputs/.drafts/<slug>-cited.md`.
+   Sources section. Writes `~/research/<slug>/<slug>-cited.md`.
 
 4. **`reviewer`** — Final review pass: flags unsupported claims, logical gaps, single-source
-   critical findings, overstated confidence. Writes `outputs/.swarm/<slug>/review.md`.
+   critical findings, overstated confidence. Writes `~/research/<slug>/review.md`.
 
 Fix any FATAL issues flagged by the reviewer before proceeding.
 
@@ -129,8 +129,8 @@ Run the full verification battery:
 
 ## Deliver
 
-Save final output to `outputs/<slug>.md`.
-Save provenance sidecar to `outputs/<slug>.provenance.md`:
+Save final output to `~/research/<slug>/<slug>.md`.
+Save provenance sidecar to `~/research/<slug>/<slug>.provenance.md`:
 
 ```markdown
 # Provenance: [request summary]
@@ -142,10 +142,10 @@ Save provenance sidecar to `outputs/<slug>.provenance.md`:
 - **Sources accepted:** [survived verification]
 - **Sources rejected:** [dead/unverifiable/removed]
 - **Verification:** [PASS / PASS WITH NOTES]
-- **Plan:** outputs/.plans/<slug>-orchestrate.md
-- **Research files:** outputs/.swarm/<slug>/research/
-- **Debate files:** outputs/.swarm/<slug>/debate/
-- **Verification files:** outputs/.swarm/<slug>/verify/
+- **Plan:** ~/research/<slug>/<slug>-orchestrate.plan.md
+- **Research files:** ~/research/<slug>/research/
+- **Debate files:** ~/research/<slug>/debate/
+- **Verification files:** ~/research/<slug>/verify/
 ```
 
 ## Budget awareness

@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { cpus, homedir, totalmem } from "node:os";
+import { cpus, totalmem } from "node:os";
 import { execSync } from "node:child_process";
 import { resolve as resolvePath } from "node:path";
 
@@ -15,11 +15,6 @@ const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
 function visibleLength(text: string): number {
 	return text.replace(ANSI_RE, "").length;
-}
-
-function formatHeaderPath(path: string): string {
-	const home = homedir();
-	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
 function truncateVisible(text: string, maxVisible: number): string {
@@ -60,16 +55,6 @@ function centerText(text: string, width: number): string {
 	const left = Math.floor((width - text.length) / 2);
 	const right = width - text.length - left;
 	return `${" ".repeat(left)}${text}${" ".repeat(right)}`;
-}
-
-function getCurrentModelLabel(ctx: ExtensionContext): string {
-	if (ctx.model) return `${ctx.model.provider}/${ctx.model.id}`;
-	const branch = ctx.sessionManager.getBranch();
-	for (let index = branch.length - 1; index >= 0; index -= 1) {
-		const entry = branch[index]!;
-		if (entry.type === "model_change") return `${(entry as any).provider}/${(entry as any).modelId}`;
-	}
-	return "not set";
 }
 
 function extractMessageText(message: unknown): string {
@@ -186,7 +171,6 @@ export function installZenithHeader(
 	cache.agentSummaryPromise ??= buildAgentCatalogSummary();
 
 	return cache.agentSummaryPromise.then((agentData) => {
-		const resources = detectSystemResources();
 		const agentCount = agentData.agents.length + agentData.chains.length;
 
 		ctx.ui.setHeader((_tui, theme) => ({
@@ -210,30 +194,6 @@ export function installZenithHeader(
 				push(`${" ".repeat(versionGap)}${theme.fg("dim", versionText)}`);
 
 				blank();
-
-				// ── Status line: model · directory · system · agents ──
-				const modelLabel = getCurrentModelLabel(ctx);
-				const dirLabel = formatHeaderPath(ctx.cwd);
-				const sysParts = [`${resources.cores} cores ${resources.ramTotal}`];
-				if (resources.docker) sysParts.push("docker");
-				const agentFragment = `${agentCount} agent${agentCount !== 1 ? "s" : ""}`;
-
-				const statusParts = [
-					theme.fg("text", modelLabel),
-					theme.fg("dim", dirLabel),
-					theme.fg("dim", sysParts.join(" · ")),
-					theme.fg("dim", agentFragment),
-				];
-				const statusText = statusParts.join(theme.fg("dim", " · "));
-				const statusVisible = visibleLength(statusText);
-				const ruleRemainder = contentW - statusVisible - 1;
-				const statusSuffix = ruleRemainder > 3
-					? ` ${theme.fg("borderMuted", "─".repeat(ruleRemainder))}`
-					: "";
-				push(`${pad}${statusText}${statusSuffix}`);
-
-				blank();
-
 				// ── Section divider helper ──
 				const divider = (label: string): string => {
 					const labelRendered = theme.fg("accent", ` ${label} `);

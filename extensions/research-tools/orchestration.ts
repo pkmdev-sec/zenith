@@ -168,8 +168,9 @@ const DOMAIN_KEYWORDS: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────
 
-function getSwarmDir(workingDir: string, slug: string): string {
-	return resolve(workingDir, "outputs", ".swarm", slug);
+function getSwarmDir(_workingDir: string, slug: string): string {
+	const researchHome = resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", "research");
+	return resolve(researchHome, slug);
 }
 
 function getEventsPath(swarmDir: string): string {
