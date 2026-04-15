@@ -3,7 +3,7 @@
     <img src="assets/hero.png" alt="Zenith" width="800" />
   </a>
 </p>
-<p align="center">zenith research agent. 100–500 agents per research with their own spaces and groups to challenge , verify, debate etc with swarming integrated to get you the nearly accurate research with structure and detailed research.</p>
+<p align="center">zenith swarm research agent</p>
 
 ---
 
