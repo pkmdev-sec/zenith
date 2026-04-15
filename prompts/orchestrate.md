@@ -11,6 +11,16 @@ Your job is to classify the user's intent, then dispatch the appropriate workflo
 
 Topic/request: $@
 
+## Output discipline
+
+During swarm execution, keep user-facing output minimal and structured:
+- Announce each phase in ONE line using `phase_gate` (it produces clean headers)
+- Do NOT narrate your reasoning, classification logic, or tool call decisions
+- Do NOT repeat tool output — the tools already show clean progress
+- Between phases, a brief status via `swarm_status` is fine
+- At the end, `deliver_artifact` shows the final result path
+- The user wants to see: phase progression, agent milestones, and the final deliverable. Nothing else.
+
 ## Phase 0: CLASSIFY
 
 Use `classify_intent` on the user's request.

@@ -398,10 +398,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					confidence: 0.99,
 				};
 				return {
-					content: [{
-						type: "text",
-						text: `Explicit workflow: /${workflow}. Routed directly — no swarm needed.`,
-					}],
+					content: [{ type: "text", text: "" }],
 					details: classification,
 				};
 			}
@@ -425,10 +422,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 						confidence: 0.85,
 					};
 					return {
-						content: [{
-							type: "text",
-							text: `Trivial lookup detected (${wordCount} words, simple question). Direct answer recommended.`,
-						}],
+						content: [{ type: "text", text: "" }],
 						details: classification,
 					};
 				}
@@ -447,13 +441,8 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				confidence,
 			};
 
-			const lines = [`Research intent detected (confidence: ${confidence.toFixed(2)})`];
-			if (taskType) lines.push(`Task type: ${taskType}`);
-			if (domains.length > 0) lines.push(`Matched domains: ${domains.join(", ")}`);
-			if (confidence < 0.7) lines.push(`Low confidence — escalate to LLM Tier 2 for disambiguation.`);
-
 			return {
-				content: [{ type: "text", text: lines.join("\n") }],
+				content: [{ type: "text", text: "◆ Research detected — launching swarm" }],
 				details: classification,
 			};
 		},
@@ -582,7 +571,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				: "[no agents tracked]";
 
 			const lines = [
-				`# Swarm Status: ${params.slug}`,
+				`◆ Swarm: ${params.slug}`,
 				``,
 				`**Phase:** ${phase}`,
 				`**Progress:** ${progressBar}`,
@@ -704,43 +693,14 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				paths[subdir] = resolve(swarmDir, subdir);
 			}
 
-			// ── Build phase summary for output ──
-			const phaseSummary = params.phases.map((p, i) =>
-				`  ${i + 1}. ${p.name} (${p.agents.length} agent${p.agents.length === 1 ? "" : "s"}): ${p.agents.join(", ")}`,
-			);
-
-			const lines = [
-				`# Swarm Prepared: ${safeSlug}`,
-				``,
-				`**Directory:** ${swarmDir}`,
-				`**Manifest:** ${manifestPath}`,
-				`**Event log:** ${eventsPath}`,
-				``,
-				`## Budget`,
-				`  Tokens: ${limits.maxTokens.toLocaleString()}`,
-				`  Agents: ${limits.maxAgents}`,
-				`  Wall clock: ${limits.maxWallClockMs > 0 ? `${(limits.maxWallClockMs / 1000).toFixed(0)}s` : "unlimited"}`,
-				``,
-				`## Phases (${params.phases.length})`,
-				...phaseSummary,
-				``,
-				`## Agent total: ${totalAgents}`,
-				``,
-				`## Subdirectories`,
-				...SWARM_SUBDIRS.map((d) => `  ${d}/`),
-				``,
-				`Ready for agent dispatch. Log events to: ${eventsPath}`,
-			];
-
+			const phaseNames = params.phases.map(p => p.name).join(" → ");
+			const tokenLabel = limits.maxTokens >= 1_000_000
+				? `${(limits.maxTokens / 1_000_000).toFixed(1)}M`
+				: `${Math.round(limits.maxTokens / 1000)}K`;
+			const userText2 = `◆ Swarm initialized: ${safeSlug}\n  Budget: ${tokenLabel} tokens · ${limits.maxAgents} agents\n  Phases: ${phaseNames}`;
 			return {
-				content: [{ type: "text", text: lines.join("\n") }],
-				details: {
-					slug: safeSlug,
-					paths,
-					budget: tracker,
-					totalAgents,
-					phases: params.phases,
-				},
+				content: [{ type: "text", text: userText2 }],
+				details: { paths, budget: tracker, phases: params.phases, manifest: manifestPath },
 			};
 		},
 	});
@@ -771,15 +731,23 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			if (spawned >= effectiveMax) {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "budget_exceeded", reason: "agent_limit", spawned, limit: effectiveMax, blocked: params.agentId });
 				return {
-					content: [{ type: "text", text: `BUDGET_EXCEEDED: Agent limit reached (${spawned}/${effectiveMax}). Do NOT spawn more agents. Proceed to synthesis with available results.` }],
-					details: { approved: false, spawned, limit: effectiveMax },
+					content: [{ type: "text", text: `⚠ Agent limit reached (${spawned}/${effectiveMax}). Proceeding to synthesis.` }],
+					details: { approved: false, spawned, limit: effectiveMax, directive: "Do NOT spawn more agents. Proceed to synthesis with available results." },
 				};
 			}
 
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_spawn", agent: params.agentName, id: params.agentId });
+			const newCount = spawned + 1;
+			const isMilestone = newCount % 25 === 0;
+			const isFinal = newCount >= effectiveMax;
+			const userText = isFinal
+				? `▸ ${newCount}/${effectiveMax} — research swarm complete`
+				: isMilestone
+					? `▸ ${newCount}/${effectiveMax} agents deployed`
+					: "";
 			return {
-				content: [{ type: "text", text: `APPROVED: Agent ${spawned + 1} of ${effectiveMax} (${params.agentName}:${params.agentId})` }],
-				details: { approved: true, spawned: spawned + 1, limit: effectiveMax },
+				content: [{ type: "text", text: userText }],
+				details: { approved: true, spawned: newCount, limit: effectiveMax, agent: params.agentName, id: params.agentId },
 			};
 		},
 	});
@@ -826,12 +794,12 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const nextIdx = PHASE_ORDER.indexOf(params.nextPhase);
 
 			if (nextIdx === -1) {
-				return { content: [{ type: "text", text: `BLOCKED: Unknown phase '${params.nextPhase}'. Valid phases: ${PHASE_ORDER.join(", ")}` }], details: { approved: false } };
+				return { content: [{ type: "text", text: "" }], details: { approved: false, reason: `Unknown phase '${params.nextPhase}'`, directive: `Valid phases: ${PHASE_ORDER.join(", ")}` } };
 			}
 
 			if (nextIdx > currentIdx + 1) {
 				const skipped = PHASE_ORDER.slice(currentIdx + 1, nextIdx).join(", ");
-				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${params.nextPhase}'.` }], details: { approved: false } };
+				return { content: [{ type: "text", text: "" }], details: { approved: false, reason: `Cannot skip phases`, directive: `Complete '${skipped}' before advancing to '${params.nextPhase}'.` } };
 			}
 
 			// Check readyThreshold for current phase.
@@ -843,12 +811,24 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				const completionRate = phaseAgents > 0 ? agentsFinished / phaseAgents : 1.0;
 
 				if (completionRate < threshold) {
-					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish.` }], details: { approved: false, completionRate, threshold } };
+					return { content: [{ type: "text", text: "" }], details: { approved: false, completionRate, threshold, reason: `Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete`, directive: `Need ${Math.round(threshold * 100)}%. Wait for more agents to finish.` } };
 				}
 			}
 
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "phase_transition", from: currentPhase, phase: params.nextPhase });
-			return { content: [{ type: "text", text: `APPROVED: Advancing to phase '${params.nextPhase}' (${currentPhase} was ${currentPhase === "none" ? "initial" : "ready"})` }], details: { approved: true, from: currentPhase, to: params.nextPhase } };
+			const PHASE_DESCRIPTIONS: Record<string, string> = {
+				scout: "Mapping the research landscape...",
+				research: "Deploying research agents...",
+				debate: "Cross-examining research outputs...",
+				verify: "Verifying citations and claims...",
+				build: "Synthesizing → drafting → verifying → reviewing...",
+			};
+			const desc = PHASE_DESCRIPTIONS[params.nextPhase] ?? "";
+			const divider = `\n── ${params.nextPhase} ────────────────────\n  ${desc}`;
+			return {
+				content: [{ type: "text", text: divider }],
+				details: { approved: true, from: currentPhase, to: params.nextPhase },
+			};
 		},
 	});
 
@@ -889,8 +869,8 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues });
 				const issueList = issues.map(i => `  - ${i}`).join("\n");
 				return {
-					content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:\n${issueList}\n\nRun verify_citations and fix, then call deliver_artifact again.` }],
-					details: { delivered: false, issues },
+					content: [{ type: "text", text: `⚠ Quality gate: ${issues.length} issue${issues.length === 1 ? "" : "s"} found. Fixing...` }],
+					details: { delivered: false, issues, directive: `Fix these issues:\n${issueList}\n\nRun verify_citations and call deliver_artifact again.` },
 				};
 			}
 
@@ -903,7 +883,10 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const destPath = resolve(researchDir, baseName);
 			copyFileSync(fullPath, destPath);
 
-			return { content: [{ type: "text", text: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}` }], details: { delivered: true, citations: citedNumbers.size, sources: sourceEntries.length, researchPath: destPath, swarmDir } };
+			return {
+				content: [{ type: "text", text: `✓ Research complete → ~/research/${baseName}` }],
+				details: { delivered: true, path: destPath, citations: citedNumbers.size, sources: sourceEntries.length },
+			};
 		},
 	});
 }
