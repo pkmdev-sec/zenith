@@ -54,6 +54,19 @@ Read scout output before proceeding — it informs agent assignments in Phase 2.
 
 ## Phase 2: RESEARCH SWARM
 
+**MANDATORY: Design a research roster with AT LEAST 100 agents for broad tier or 200 for expensive.**
+Each agent must have a unique combination of:
+- Domain specialist (from the 195+ available)
+- Lens: empiricist | theorist | practitioner | critic | historian | methodologist
+- Stance: advocate | skeptic | neutral | contrarian
+- Search strategy: alpha_search | scholar_search | web_search | cross-disciplinary
+
+The `run_swarm` tool will REJECT plans with fewer than 100 agents. Do not try to shortcut this.
+
+Before spawning EACH agent, call `log_agent_spawn` to register it with the budget tracker.
+Before advancing to EACH new phase, call `phase_gate` to validate the transition.
+When delivering the final artifact, call `deliver_artifact` to pass the quality gate.
+
 Spawn 100-500 `swarm-researcher` agents (per the scale decision) in batches of 15-20.
 Each agent gets a unique combination of domain/lens/stance/search-strategy.
 Use `async: true, clarify: false` for all agents.

@@ -642,6 +642,21 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const safeSlug = slugify(params.slug);
 			const swarmDir = getSwarmDir(cwd, safeSlug);
 
+			// ── Enforce minimum agent count ──
+			const totalAgents = params.phases.reduce((sum, p) => sum + p.agents.length, 0);
+
+			const MIN_AGENTS_BROAD = 100;
+			const MIN_AGENTS_EXPENSIVE = 200;
+			const scaleStr = typeof params.budget === "string" ? params.budget : "broad";
+			const minRequired = scaleStr === "expensive" ? MIN_AGENTS_EXPENSIVE : MIN_AGENTS_BROAD;
+
+			if (totalAgents < minRequired) {
+				return {
+					content: [{ type: "text", text: `REJECTED: Plan has only ${totalAgents} agents. Minimum for '${scaleStr}' tier is ${minRequired}. Redesign the plan with more diverse researchers — add domain specialists, different lenses (empiricist/theorist/practitioner/critic/historian/methodologist), and different stances (advocate/skeptic/neutral/contrarian). Every research request deserves thorough investigation.` }],
+					details: { rejected: true, totalAgents, minRequired, scale: scaleStr },
+				};
+			}
+
 			// ── Create directory structure ──
 			mkdirSync(swarmDir, { recursive: true });
 			for (const subdir of SWARM_SUBDIRS) {
@@ -663,7 +678,6 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 			// ── Initialize event log ──
 			const eventsPath = getEventsPath(swarmDir);
-			const totalAgents = params.phases.reduce((sum, p) => sum + p.agents.length, 0);
 			const initEvent: SwarmEvent = {
 				ts: new Date().toISOString(),
 				type: "swarm_init",
