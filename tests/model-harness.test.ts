@@ -59,10 +59,25 @@ test("buildModelStatusSnapshotFromRecords flags an invalid current model and sug
 
 test("resolveInitialPrompt maps top-level research commands to Pi slash workflows", () => {
 	const workflows = new Set(["lit", "watch", "jobs", "deepresearch"]);
-	assert.equal(resolveInitialPrompt("lit", ["tool-using", "agents"], undefined, workflows), "/lit tool-using agents");
-	assert.equal(resolveInitialPrompt("watch", ["openai"], undefined, workflows), "/watch openai");
-	assert.equal(resolveInitialPrompt("jobs", [], undefined, workflows), "/jobs");
-	assert.equal(resolveInitialPrompt("chat", ["hello"], undefined, workflows), "hello");
-	assert.equal(resolveInitialPrompt("unknown", ["topic"], undefined, workflows), "unknown topic");
+	assert.equal(resolveInitialPrompt("lit", ["tool-using", "agents"], undefined, workflows, false, false), "/lit tool-using agents");
+	assert.equal(resolveInitialPrompt("watch", ["openai"], undefined, workflows, false, false), "/watch openai");
+	assert.equal(resolveInitialPrompt("jobs", [], undefined, workflows, false, false), "/jobs");
+	assert.equal(resolveInitialPrompt("chat", ["hello"], undefined, workflows, false, false), "hello");
+	assert.equal(resolveInitialPrompt("unknown", ["topic"], undefined, workflows, false, false), "unknown topic");
 });
 
+test("resolveInitialPrompt routes bare text through /orchestrate when swarmDefault is true", () => {
+	const workflows = new Set(["lit", "watch", "jobs", "deepresearch"]);
+	assert.strictEqual(
+		resolveInitialPrompt("scaling", ["laws", "in", "LLMs"], undefined, workflows, true, false),
+		"/orchestrate scaling laws in LLMs",
+	);
+});
+
+test("resolveInitialPrompt bypasses swarm routing when --direct is set", () => {
+	const workflows = new Set(["lit", "watch", "jobs", "deepresearch"]);
+	assert.strictEqual(
+		resolveInitialPrompt("scaling", ["laws", "in", "LLMs"], undefined, workflows, true, true),
+		"scaling laws in LLMs",
+	);
+});

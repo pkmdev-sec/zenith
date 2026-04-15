@@ -17,7 +17,7 @@ import { syncBundledAssets } from "./bootstrap/sync.js";
 import { ensureZenithHome, getDefaultSessionDir, getZenithAgentDir, getZenithHome } from "./config/paths.js";
 import { launchPiChat } from "./pi/launch.js";
 import { CORE_PACKAGE_SOURCES, getOptionalPackagePresetSources, listOptionalPackagePresets } from "./pi/package-presets.js";
-import { normalizeZenithSettings, normalizeThinkingLevel, parseModelSpec } from "./pi/settings.js";
+import { normalizeZenithSettings, normalizeThinkingLevel, parseModelSpec, readJson } from "./pi/settings.js";
 import {
 	authenticateModelProvider,
 	getCurrentModelSpec,
@@ -251,8 +251,13 @@ export function resolveInitialPrompt(
 	rest: string[],
 	oneShotPrompt: string | undefined,
 	workflowCommands: Set<string>,
+	swarmDefault: boolean,
+	isDirect: boolean,
 ): string | undefined {
 	if (oneShotPrompt) {
+		if (swarmDefault && !isDirect && !oneShotPrompt.startsWith("/")) {
+			return `/orchestrate ${oneShotPrompt}`;
+		}
 		return oneShotPrompt;
 	}
 	if (!command) {
@@ -265,7 +270,11 @@ export function resolveInitialPrompt(
 		return [`/${command}`, ...rest].join(" ").trim();
 	}
 	if (!TOP_LEVEL_COMMANDS.has(command)) {
-		return [command, ...rest].join(" ");
+		const barePrompt = [command, ...rest].join(" ");
+		if (swarmDefault && !isDirect) {
+			return `/orchestrate ${barePrompt}`;
+		}
+		return barePrompt;
 	}
 	return undefined;
 }
@@ -286,6 +295,7 @@ export async function main(): Promise<void> {
 		allowPositionals: true,
 		options: {
 			cwd: { type: "string" },
+			direct: { type: "boolean" },
 			doctor: { type: "boolean" },
 			help: { type: "boolean" },
 			version: { type: "boolean" },
@@ -321,6 +331,10 @@ export async function main(): Promise<void> {
 	const thinkingLevel = normalizeThinkingLevel(values.thinking ?? process.env.ZENITH_THINKING) ?? "medium";
 
 	normalizeZenithSettings(zenithSettingsPath, bundledSettingsPath, thinkingLevel, zenithAuthPath);
+
+	const zenithSettings = readJson(zenithSettingsPath);
+	const swarmDefault = (zenithSettings.swarm as any)?.swarmDefault !== false;
+	const isDirect = values.direct === true;
 
 	if (values.doctor) {
 		runDoctor({
@@ -454,6 +468,11 @@ export async function main(): Promise<void> {
 		thinkingLevel,
 		explicitModelSpec,
 		oneShotPrompt: values.prompt,
-		initialPrompt: resolveInitialPrompt(command, rest, values.prompt, new Set(readPromptSpecs(appRoot).filter((s) => s.topLevelCli).map((s) => s.name))),
+		initialPrompt: resolveInitialPrompt(
+			command, rest, values.prompt,
+			new Set(readPromptSpecs(appRoot).filter((s) => s.topLevelCli).map((s) => s.name)),
+			swarmDefault,
+			isDirect,
+		),
 	});
 }
