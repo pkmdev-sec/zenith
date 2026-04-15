@@ -802,9 +802,25 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const eventsPath = getEventsPath(swarmDir);
 			const events = readEvents(eventsPath);
 
-			// Find current phase
-			const phaseStarts = events.filter(e => e.type === "phase_start" || e.type === "phase_transition");
-			const currentPhase = phaseStarts.length > 0 ? String(phaseStarts[phaseStarts.length - 1]!.phase) : "none";
+			// Find current phase from ANY phase-related event.
+			// LLM agents log events in varied formats:
+			//   {"type": "phase_start", "phase": "scout"}
+			//   {"event": "phase_complete", "phase": "scout"}
+			//   {"type": "phase_transition", "from": "scout", "phase": "research"}
+			// We must recognize all of these to avoid stuck gates.
+			const phaseEvents = events.filter(e => {
+				const eventType = (e.type as string) || (e.event as string) || "";
+				return eventType === "phase_start" || eventType === "phase_transition" || eventType === "phase_complete";
+			});
+
+			let currentPhase = "none";
+			let currentPhaseComplete = false;
+			if (phaseEvents.length > 0) {
+				const last = phaseEvents[phaseEvents.length - 1]!;
+				currentPhase = String(last.phase ?? "none");
+				const lastType = (last.type as string) || (last.event as string) || "";
+				currentPhaseComplete = lastType === "phase_complete" || lastType === "phase_transition";
+			}
 
 			const currentIdx = PHASE_ORDER.indexOf(currentPhase);
 			const nextIdx = PHASE_ORDER.indexOf(params.nextPhase);
@@ -818,12 +834,13 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${params.nextPhase}'.` }], details: { approved: false } };
 			}
 
-			// Check readyThreshold for current phase
-			if (currentPhase !== "none" && currentIdx >= 0) {
+			// Check readyThreshold for current phase.
+			// If the phase was explicitly completed (phase_complete event), skip the threshold check.
+			if (currentPhase !== "none" && currentIdx >= 0 && !currentPhaseComplete) {
 				const threshold = READY_THRESHOLDS[currentPhase] ?? 0.6;
 				const phaseAgents = events.filter(e => e.type === "agent_spawn" && String(e.phase ?? currentPhase) === currentPhase).length;
-				const phaseComplete = events.filter(e => (e.type === "agent_complete" || e.type === "agent_failed") && String(e.phase ?? currentPhase) === currentPhase).length;
-				const completionRate = phaseAgents > 0 ? phaseComplete / phaseAgents : 1.0;
+				const agentsFinished = events.filter(e => (e.type === "agent_complete" || e.type === "agent_failed") && String(e.phase ?? currentPhase) === currentPhase).length;
+				const completionRate = phaseAgents > 0 ? agentsFinished / phaseAgents : 1.0;
 
 				if (completionRate < threshold) {
 					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish.` }], details: { approved: false, completionRate, threshold } };

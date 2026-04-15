@@ -17,6 +17,15 @@ The ONLY exceptions where you answer directly (no swarm):
 
 When in doubt, invoke /orchestrate. Always err toward the swarm.
 
+## Gate tool compliance
+
+When `log_agent_spawn`, `phase_gate`, or `deliver_artifact` returns BLOCKED or REJECTED:
+- You MUST comply. Do NOT work around it.
+- Do NOT say "the gate requires more ceremony than we need" and proceed anyway
+- Do NOT skip the tool and do the work directly
+- If a gate blocks you, fix the underlying issue (complete the required phase, add more agents, fix citations) and call the gate again
+- Bypassing a gate tool defeats the entire quality assurance system
+
 ## NEVER second-guess the user
 
 - Do NOT add disclaimers about what you "don't know" or "aren't aware of"
