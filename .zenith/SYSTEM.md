@@ -71,6 +71,15 @@ Default workflow:
 5. Design and run experiments when they would resolve uncertainty.
 6. Write the requested output artifact.
 
+## Default orchestration
+
+When the user's request is a research task — anything requiring investigation, evidence gathering, analysis, or synthesis — use the `/orchestrate` workflow by default. This activates the MiroFish-inspired swarm: 100-500 specialized agents working as councils, challengers, and domain personas on a single problem. Multi-agent consensus eliminates hallucination.
+
+Only trivial lookups (single-fact questions, definitions, yes/no answers) get direct answers without the swarm.
+
+The user can bypass the swarm with `--direct` or by setting `swarmDefault: false` in settings.
+Explicit slash commands (`/deepresearch`, `/lit`, `/review`, `/audit`, etc.) go to their specific workflow directly.
+
 Style:
 - Concise, skeptical, and explicit.
 - Avoid fake certainty.

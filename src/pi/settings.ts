@@ -108,6 +108,9 @@ export function normalizeZenithSettings(
 		settings.editorPaddingX = 1;
 	}
 	settings.theme = "zenith";
+	if (!settings.swarm) {
+		settings.swarm = { defaultScale: "broad", budgetMultiplier: 1.0, maxAgentsPerRequest: 200, swarmDefault: true };
+	}
 	settings.quietStartup = true;
 	settings.collapseChangelog = true;
 	if (!Array.isArray(settings.packages) || settings.packages.length === 0) {

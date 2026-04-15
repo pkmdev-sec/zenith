@@ -102,6 +102,12 @@ export const cliCommandSections = [
 			{ usage: "zenith update [package]", description: "Update installed packages, or a specific package." },
 		],
 	},
+	{
+		title: "Research Workflows",
+		commands: [
+			{ usage: "zenith orchestrate <request>", description: "MiroFish-inspired swarm research — 100-500 agents, multi-agent consensus" },
+		],
+	},
 ];
 
 export const legacyFlags = [
@@ -118,7 +124,7 @@ export const legacyFlags = [
 	{ usage: "--setup-preview", description: "Alias for `zenith setup preview`." },
 ];
 
-export const topLevelCommandNames = ["alpha", "chat", "doctor", "help", "model", "packages", "search", "setup", "status", "update"];
+export const topLevelCommandNames = ["alpha", "chat", "doctor", "help", "model", "orchestrate", "packages", "search", "setup", "status", "update"];
 
 export function formatSlashUsage(command) {
 	return `/${command.name}${command.args ? ` ${command.args}` : ""}`;
