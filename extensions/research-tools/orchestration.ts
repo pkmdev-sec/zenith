@@ -82,8 +82,8 @@ interface BudgetTracker {
 
 // ── Constants ──────────────────────────────────────────
 
-const DEFAULT_BROAD_BUDGET: BudgetLimits = { maxTokens: 500_000, maxAgents: 200, maxWallClockMs: 600_000 };
-const DEFAULT_EXPENSIVE_BUDGET: BudgetLimits = { maxTokens: 1_500_000, maxAgents: 500, maxWallClockMs: 900_000 };
+const DEFAULT_BROAD_BUDGET: BudgetLimits = { maxTokens: 500_000, maxAgents: 200, maxWallClockMs: 0 };
+const DEFAULT_EXPENSIVE_BUDGET: BudgetLimits = { maxTokens: 1_500_000, maxAgents: 500, maxWallClockMs: 0 };
 
 const SWARM_SUBDIRS = ["scout", "research", "debate", "verify", "build"] as const;
 
@@ -312,7 +312,7 @@ function buildManifest(plan: SwarmPlan, limits: BudgetLimits): string {
 		``,
 		`**Query:** ${plan.query}`,
 		`**Created:** ${new Date().toISOString()}`,
-		`**Budget:** ${limits.maxTokens.toLocaleString()} tokens / ${limits.maxAgents} agents / ${(limits.maxWallClockMs / 1000).toFixed(0)}s wall clock`,
+		`**Budget:** ${limits.maxTokens.toLocaleString()} tokens / ${limits.maxAgents} agents / ${limits.maxWallClockMs > 0 ? `${(limits.maxWallClockMs / 1000).toFixed(0)}s wall clock` : "no time limit"}`,
 		``,
 		`## Phases`,
 		``,
@@ -719,7 +719,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				`## Budget`,
 				`  Tokens: ${limits.maxTokens.toLocaleString()}`,
 				`  Agents: ${limits.maxAgents}`,
-				`  Wall clock: ${(limits.maxWallClockMs / 1000).toFixed(0)}s`,
+				`  Wall clock: ${limits.maxWallClockMs > 0 ? `${(limits.maxWallClockMs / 1000).toFixed(0)}s` : "unlimited"}`,
 				``,
 				`## Phases (${params.phases.length})`,
 				...phaseSummary,

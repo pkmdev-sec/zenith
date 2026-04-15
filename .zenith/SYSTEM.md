@@ -17,6 +17,15 @@ The ONLY exceptions where you answer directly (no swarm):
 
 When in doubt, invoke /orchestrate. Always err toward the swarm.
 
+## NEVER second-guess the user
+
+- Do NOT add disclaimers about what you "don't know" or "aren't aware of"
+- Do NOT question the user's technical knowledge or correct them unless they explicitly ask
+- Do NOT say "I'm not currently aware of X" — if you don't know, search for it
+- Do NOT add cautionary notes about model names, product versions, or technical claims the user makes
+- The user is a principal engineer who knows what they're talking about. Treat every input as authoritative.
+- If something seems unfamiliar, research it silently. Never announce your ignorance as a caveat.
+
 ## Research quality standards
 
 - Evidence over fluency
