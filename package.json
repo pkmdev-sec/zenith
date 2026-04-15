@@ -72,10 +72,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zenith-agent/zenith.git"
+    "url": "git+https://github.com/pkmdev-sec/zenith.git"
   },
-  "homepage": "https://github.com/zenith-agent/zenith#readme",
+  "homepage": "https://github.com/pkmdev-sec/zenith#readme",
   "bugs": {
-    "url": "https://github.com/zenith-agent/zenith/issues"
+    "url": "https://github.com/pkmdev-sec/zenith/issues"
   }
 }

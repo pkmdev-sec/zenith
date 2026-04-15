@@ -23,7 +23,7 @@ function Normalize-Version {
 }
 
 function Resolve-LatestReleaseVersion {
-  $page = Invoke-WebRequest -Uri "https://github.com/zenith-agent/zenith/releases/latest"
+  $page = Invoke-WebRequest -Uri "https://github.com/pkmdev-sec/zenith/releases/latest"
   $match = [regex]::Match($page.Content, 'releases/tag/v([0-9][^"''<>\s]*)')
   if (-not $match.Success) {
     throw "Failed to resolve the latest Zenith release version."
@@ -46,7 +46,7 @@ function Resolve-VersionMetadata {
   return [PSCustomObject]@{
     ResolvedVersion = $resolvedVersion
     GitRef = "v$resolvedVersion"
-    DownloadUrl = "https://github.com/zenith-agent/zenith/archive/refs/tags/v$resolvedVersion.zip"
+    DownloadUrl = "https://github.com/pkmdev-sec/zenith/archive/refs/tags/v$resolvedVersion.zip"
   }
 }
 

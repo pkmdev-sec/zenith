@@ -78,7 +78,7 @@ resolve_version() {
   normalized_version="$(normalize_version "$VERSION")"
 
   if [ "$normalized_version" = "latest" ]; then
-    release_page="$(download_text "https://github.com/zenith-agent/zenith/releases/latest")"
+    release_page="$(download_text "https://github.com/pkmdev-sec/zenith/releases/latest")"
     resolved_version="$(printf '%s\n' "$release_page" | sed -n 's@.*releases/tag/v\([0-9][^"<>[:space:]]*\).*@\1@p' | head -n 1)"
 
     if [ -z "$resolved_version" ]; then
@@ -149,10 +149,10 @@ git_ref="$(printf '%s\n' "$archive_metadata" | sed -n '2p')"
 archive_url=""
 case "$git_ref" in
   main)
-    archive_url="https://github.com/zenith-agent/zenith/archive/refs/heads/main.tar.gz"
+    archive_url="https://github.com/pkmdev-sec/zenith/archive/refs/heads/main.tar.gz"
     ;;
   v*)
-    archive_url="https://github.com/zenith-agent/zenith/archive/refs/tags/${git_ref}.tar.gz"
+    archive_url="https://github.com/pkmdev-sec/zenith/archive/refs/tags/${git_ref}.tar.gz"
     ;;
 esac
 
