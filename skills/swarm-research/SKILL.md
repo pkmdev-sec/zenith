@@ -1,16 +1,26 @@
 ---
 name: swarm-research
-description: "Swarm intelligence research — spawn dozens to hundreds of diverse agents that independently investigate, debate, and cross-verify findings. Produces multi-perspective analysis with confidence scores."
+description: "MiroFish-inspired swarm — 100-500 agents as councils, challengers, and domain specialists. Multi-agent consensus eliminates hallucination."
 ---
 
-Swarm research uses many parallel agents with diverse expertise, methodologies, and stances
-to investigate a question from every angle simultaneously. Unlike /deepresearch (4-agent pipeline),
-/swarm produces emergent consensus through agent diversity and adversarial cross-examination.
+# Swarm Research
 
-Scale options: `focused` (10-15 agents), `standard` (30-50), `deep` (100-200), `massive` (500-1000).
-Default: standard.
+The default research mode. Every research question dispatches 100-500 specialized 
+agents working as councils, challengers, and domain personas on a single problem.
 
-Agents: swarm-researcher (many), debate-agent (5-10), swarm-verifier (5-10).
-Output: `outputs/<slug>-swarm.md` with `.provenance.md` sidecar.
+This is what runs when you just ask a question.
 
-Run the `/swarm` workflow. Confirm the plan and scale before agent spawning begins.
+## Tiers
+- **broad** (default): 100-200 agents — thorough research
+- **expensive**: 300-500 agents — interdisciplinary deep-dive
+
+## 6-Phase Pipeline
+1. **Scout** — fast recon to map the landscape
+2. **Research Swarm** — 100-500 diverse agents investigate in parallel
+3. **Cross-Examination** — councils + challengers debate findings
+4. **Verification** — independent citation/claim verification
+5. **Build** — synthesizer → writer → verifier → reviewer
+6. **Quality Gate** — verify_citations + validate_output + export
+
+## Output
+World-class research document in `outputs/<slug>.md` with full provenance.
