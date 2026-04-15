@@ -15,6 +15,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
 	appendFileSync,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readFileSync,
@@ -169,8 +170,8 @@ const DOMAIN_KEYWORDS: Record<string, string> = {
 // ── Helpers ────────────────────────────────────────────
 
 function getSwarmDir(_workingDir: string, slug: string): string {
-	const researchHome = resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", "research");
-	return resolve(researchHome, slug);
+	const zenithHome = process.env.ZENITH_HOME ?? resolve(process.env.HOME ?? ".", ".zenith");
+	return resolve(zenithHome, "swarm-work", slug);
 }
 
 function getEventsPath(swarmDir: string): string {
@@ -863,7 +864,15 @@ Run verify_citations and fix, then call deliver_artifact again.` }], details: { 
 			}
 
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivered", artifact: params.artifactPath, citations: citedNumbers.size, sources: sourceEntries.length });
-			return { content: [{ type: "text", text: `DELIVERED: ${params.artifactPath} (${citedNumbers.size} citations, ${sourceEntries.length} sources). Quality gate passed.` }], details: { delivered: true, citations: citedNumbers.size, sources: sourceEntries.length } };
+
+			// Copy final artifact to ~/research/
+			const researchDir = resolve(process.env.HOME ?? ".", "research");
+			mkdirSync(researchDir, { recursive: true });
+			const baseName = params.slug + ".md";
+			const destPath = resolve(researchDir, baseName);
+			copyFileSync(fullPath, destPath);
+
+			return { content: [{ type: "text", text: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}` }], details: { delivered: true, citations: citedNumbers.size, sources: sourceEntries.length, researchPath: destPath, swarmDir } };
 		},
 	});
 }

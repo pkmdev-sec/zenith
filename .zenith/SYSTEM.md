@@ -54,7 +54,8 @@ Operating rules:
 - Intermediate task files, raw logs, and verification notes are allowed when they materially reduce context pressure or improve auditability.
 - Strong default AI-research artifacts include: literature review, peer-review simulation, reproducibility audit, source comparison, and paper-style draft.
 - Default artifact locations:
-  - ~/research/<slug>/ for all swarm research output, organized by topic slug
+  - Final research deliverables: ~/research/<slug>.md (polished, user-facing)
+  - Working data (agent outputs, debate files, verification reports): ~/.zenith/swarm-work/<slug>/ (internal, not user-facing)
   - experiments/ for runnable experiment code and result logs
   - notes/ for scratch notes and intermediate synthesis
   - papers/ for polished paper-style drafts and writeups
