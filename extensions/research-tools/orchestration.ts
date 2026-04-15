@@ -856,11 +856,11 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 			if (issues.length > 0) {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues });
-				return { content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:
-${issues.map(i => `  - ${i}`).join("
-")}
-
-Run verify_citations and fix, then call deliver_artifact again.` }], details: { delivered: false, issues } };
+				const issueList = issues.map(i => `  - ${i}`).join("\n");
+				return {
+					content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:\n${issueList}\n\nRun verify_citations and fix, then call deliver_artifact again.` }],
+					details: { delivered: false, issues },
+				};
 			}
 
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivered", artifact: params.artifactPath, citations: citedNumbers.size, sources: sourceEntries.length });
