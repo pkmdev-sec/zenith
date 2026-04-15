@@ -86,23 +86,6 @@ export const cliCommandSections = [
 		],
 	},
 	{
-		title: "AlphaXiv",
-		commands: [
-			{ usage: "zenith alpha login", description: "Sign in to alphaXiv." },
-			{ usage: "zenith alpha logout", description: "Clear alphaXiv auth." },
-			{ usage: "zenith alpha status", description: "Check alphaXiv auth status." },
-		],
-	},
-	{
-		title: "Utilities",
-		commands: [
-			{ usage: "zenith packages list", description: "Show core and optional Pi package presets." },
-			{ usage: "zenith packages install <preset>", description: "Install optional package presets on demand." },
-			{ usage: "zenith search status", description: "Show Pi web-access status and config path." },
-			{ usage: "zenith update [package]", description: "Update installed packages, or a specific package." },
-		],
-	},
-	{
 		title: "Research Workflows",
 		commands: [
 			{ usage: "zenith orchestrate <request>", description: "MiroFish-inspired swarm research — 100-500 agents, multi-agent consensus" },
@@ -110,19 +93,7 @@ export const cliCommandSections = [
 	},
 ];
 
-export const legacyFlags = [
-	{ usage: '--prompt "<text>"', description: "Run one prompt and exit." },
-	{ usage: "--alpha-login", description: "Sign in to alphaXiv and exit." },
-	{ usage: "--alpha-logout", description: "Clear alphaXiv auth and exit." },
-	{ usage: "--alpha-status", description: "Show alphaXiv auth status and exit." },
-	{ usage: "--model <provider:model>", description: "Force a specific model." },
-	{ usage: "--thinking <level>", description: "Set thinking level: off | minimal | low | medium | high | xhigh." },
-	{ usage: "--cwd <path>", description: "Set the working directory for tools." },
-	{ usage: "--session-dir <path>", description: "Set the session storage directory." },
-	{ usage: "--new-session", description: "Start a new persisted session." },
-	{ usage: "--doctor", description: "Alias for `zenith doctor`." },
-	{ usage: "--setup-preview", description: "Alias for `zenith setup preview`." },
-];
+export const legacyFlags = [];
 
 export const topLevelCommandNames = ["alpha", "chat", "doctor", "help", "model", "orchestrate", "packages", "search", "setup", "status", "update"];
 

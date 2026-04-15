@@ -33,9 +33,6 @@ import { runSetup } from "./setup/setup.js";
 import { ASH, printAsciiHeader, printInfo, printPanel, printSection, RESET, SAGE } from "./ui/terminal.js";
 import { createModelRegistry } from "./model/registry.js";
 import {
-	cliCommandSections,
-	formatCliWorkflowUsage,
-	legacyFlags,
 	readPromptSpecs,
 	topLevelCommandNames,
 } from "../metadata/commands.mjs";
@@ -49,41 +46,31 @@ function printHelpLine(usage: string, description: string): void {
 }
 
 function printHelp(appRoot: string): void {
-	const workflowCommands = readPromptSpecs(appRoot).filter(
-		(command) => command.section === "Research Workflows" && command.topLevelCli,
-	);
-
 	printAsciiHeader([
-		"Research-first agent shell built on Pi.",
-		"Use `zenith setup` first if this is a new machine.",
+		"MiroFish-inspired research agent — 100-500 agents per question.",
+		"Just ask. The swarm handles the rest.",
 	]);
 
-	printSection("Getting Started");
-	printInfo("zenith");
-	printInfo("zenith setup");
-	printInfo("zenith doctor");
-	printInfo("zenith model");
-	printInfo("zenith search status");
+	printSection("Usage");
+	printInfo('zenith "your research question"      Swarm research (default)');
+	printInfo('zenith --direct "quick question"     Single-agent answer');
+	printInfo("zenith setup                         First-time setup wizard");
 
-	printSection("Commands");
-	for (const section of cliCommandSections) {
-		for (const command of section.commands) {
-			printHelpLine(command.usage, command.description);
-		}
-	}
+	printSection("Setup");
+	printHelpLine("zenith setup", "Guided setup — model provider, auth, defaults");
+	printHelpLine("zenith doctor", "Diagnose config, auth, runtime");
+	printHelpLine("zenith model list", "List available models");
+	printHelpLine("zenith model set <provider/model>", "Set default model");
+	printHelpLine("zenith alpha login", "Sign in to alphaXiv");
 
-	printSection("Research Workflows");
-	for (const command of workflowCommands) {
-		printHelpLine(formatCliWorkflowUsage(command), command.description);
-	}
-
-	printSection("Legacy Flags");
-	for (const flag of legacyFlags) {
-		printHelpLine(flag.usage, flag.description);
-	}
+	printSection("Options");
+	printHelpLine("--direct", "Bypass swarm, single-agent answer");
+	printHelpLine("--model <provider:model>", "Force a specific model");
+	printHelpLine("--thinking <level>", "Thinking level (off|minimal|low|medium|high|xhigh)");
+	printHelpLine('--prompt "<text>"', "One-shot prompt, no REPL");
 
 	printSection("REPL");
-	printInfo("Inside the REPL, slash workflows come from the live prompt-template and extension command set.");
+	printInfo("Type /help inside the REPL for slash commands.");
 }
 
 async function handleAlphaCommand(action: string | undefined): Promise<void> {

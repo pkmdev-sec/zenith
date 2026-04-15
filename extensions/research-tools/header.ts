@@ -187,7 +187,6 @@ export function installZenithHeader(
 
 	return cache.agentSummaryPromise.then((agentData) => {
 		const resources = detectSystemResources();
-		const workflows = getResearchWorkflows(pi);
 		const agentCount = agentData.agents.length + agentData.chains.length;
 
 		ctx.ui.setHeader((_tui, theme) => ({
@@ -245,68 +244,64 @@ export function installZenithHeader(
 					return `${pad}${prefixDash}${labelRendered}${suffixDash}`;
 				};
 
-				// ── Workflows grid ──
-				const filteredWorkflows = workflows.filter(
-					(wf) => wf.name !== "/jobs" && wf.name !== "/log",
-				);
+				// ── Swarm section ──
+				push(divider("swarm"));
+				blank();
 
-				if (filteredWorkflows.length > 0) {
-					push(divider("workflows"));
-					blank();
-
-					const nameColW = 16;
-					const useTwoCol = contentW >= 70;
-
-					if (useTwoCol) {
-						const halfW = Math.floor(contentW / 2);
-						const descW = Math.max(1, halfW - nameColW - 1);
-
-						for (let i = 0; i < filteredWorkflows.length; i += 2) {
-							const left = filteredWorkflows[i]!;
-							const leftName = theme.fg("accent", left.name.padEnd(nameColW));
-							const leftDesc = theme.fg("dim", truncateVisible(shortDescription(left.description), descW));
-							const leftCell = `${leftName}${leftDesc}`;
-
-							const right = filteredWorkflows[i + 1];
-							if (right) {
-								const rightName = theme.fg("accent", right.name.padEnd(nameColW));
-								const rightDesc = theme.fg("dim", truncateVisible(shortDescription(right.description), descW));
-								push(`${pad}${padRight(leftCell, halfW)}${rightName}${rightDesc}`);
-							} else {
-								push(`${pad}${leftCell}`);
-							}
-						}
-					} else {
-						const descW = Math.max(1, contentW - nameColW - 1);
-						for (const wf of filteredWorkflows) {
-							const name = theme.fg("accent", wf.name.padEnd(nameColW));
-							const desc = theme.fg("dim", truncateVisible(shortDescription(wf.description), descW));
-							push(`${pad}${name}${desc}`);
-						}
-					}
-
-					blank();
+				const swarmDesc = [
+					"Every research question dispatches 100-500 agents as councils,",
+					"challengers, and domain specialists. Multi-agent consensus",
+					"eliminates hallucination.",
+				];
+				for (const descLine of swarmDesc) {
+					push(`${pad}${theme.fg("dim", descLine)}`);
 				}
 
-				// ── Agents footer ──
-				if (agentCount > 0) {
-					push(divider("agents"));
-					blank();
+				blank();
 
-					const coreNames = ["researcher", "writer", "reviewer", "verifier"];
-					const presentCores = coreNames.filter((n) => agentData.agents.includes(n));
-					const specialistCount = agentCount - presentCores.length;
-
-					const corePart = presentCores
-						.map((n) => theme.fg("accent", n))
-						.join(theme.fg("dim", " · "));
-					const specialistPart = specialistCount > 0
-						? `${theme.fg("dim", "  +")}${theme.fg("dim", `${specialistCount} specialists`)}`
-						: "";
-
-					push(`${pad}${corePart}${specialistPart}`);
-					blank();
+				const tierNameW = 21;
+				const tierAgentW = 18;
+				const tiers: [string, string, string][] = [
+					["broad (default)", "100-200 agents", "thorough research"],
+					["expensive", "300-500 agents", "interdisciplinary deep-dive"],
+				];
+				for (const [name, agents, desc] of tiers) {
+					push(`${pad}${theme.fg("accent", name.padEnd(tierNameW))}${theme.fg("dim", agents.padEnd(tierAgentW))}${theme.fg("dim", desc)}`);
 				}
+
+				blank();
+
+				// ── Agents section ──
+				push(divider("agents"));
+				blank();
+
+				const coreNames = ["researcher", "writer", "reviewer", "verifier"];
+				const swarmNames = ["synthesizer", "coordinator", "scout", "debate-agent"];
+				const specialistCount = Math.max(0, agentCount - coreNames.length);
+
+				const corePart = coreNames
+					.map((n) => theme.fg("accent", n))
+					.join(theme.fg("dim", " · "));
+				const specialistPart = specialistCount > 0
+					? `${theme.fg("dim", "  +")}${theme.fg("dim", `${specialistCount} specialists`)}`
+					: "";
+				push(`${pad}${corePart}${specialistPart}`);
+
+				const swarmPart = swarmNames
+					.map((n) => theme.fg("accent", n))
+					.join(theme.fg("dim", " · "));
+				push(`${pad}${swarmPart}`);
+
+				blank();
+
+				// ── Quick start section ──
+				push(divider("quick start"));
+				blank();
+
+				push(`${pad}${theme.fg("dim", "Just ask a question. The swarm handles the rest.")}`);
+				push(`${pad}${theme.fg("dim", "Use ")}${theme.fg("accent", "--direct")}${theme.fg("dim", " for single-agent answers.")}`);
+
+				blank();
 
 				return lines;
 			},
