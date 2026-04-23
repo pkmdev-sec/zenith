@@ -97,6 +97,12 @@ export interface LocalBatchRecord {
 	lastStatus: BatchStatus;
 	requestCount: number;
 	customIdsToPersona: Record<string, string>; // decode which persona each request belonged to
+	/**
+	 * Which MiroFish round this batch represents. Optional for backwards
+	 * compatibility with records saved before this field existed; `zenith
+	 * batch collect` defaults to round 1 when the field is absent.
+	 */
+	round?: number;
 	note?: string;
 }
 

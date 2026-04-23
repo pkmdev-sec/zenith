@@ -1,9 +1,8 @@
 import "dotenv/config";
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { fileURLToPath } from "node:url";
 
 import {
 	getUserName as getAlphaUserName,
@@ -32,12 +31,30 @@ import { setupPreviewDependencies } from "./setup/preview.js";
 import { runSetup } from "./setup/setup.js";
 import { ASH, printAsciiHeader, printInfo, printPanel, printSection, printSuccess, RESET, SAGE } from "./ui/terminal.js";
 import { createModelRegistry } from "./model/registry.js";
-import {
-	readPromptSpecs,
-	topLevelCommandNames,
-} from "../metadata/commands.mjs";
+import { findAppRoot } from "./system/app-root.js";
+import type { PromptSpec } from "../metadata/commands.mjs";
 
-const TOP_LEVEL_COMMANDS = new Set(topLevelCommandNames);
+// NOTE: Kept in lockstep with `topLevelCommandNames` in `metadata/commands.mjs`.
+// A compiled-layout shift (src/cli.ts -> dist/src/cli.js) breaks the relative
+// path to that file; importing it dynamically from the app root avoids the
+// issue. `tests/top-level-commands.test.ts` enforces that this list does
+// not drift from the canonical one.
+const TOP_LEVEL_COMMAND_NAMES = [
+	"alpha", "batch", "chat", "doctor", "help", "model", "orchestrate",
+	"packages", "search", "setup", "status", "sync", "update",
+] as const;
+const TOP_LEVEL_COMMANDS = new Set<string>(TOP_LEVEL_COMMAND_NAMES);
+
+async function importCommandsMetadata(appRoot: string): Promise<{
+	readPromptSpecs: (root: string) => PromptSpec[];
+}> {
+	const { resolve } = await import("node:path");
+	const { pathToFileURL } = await import("node:url");
+	const url = pathToFileURL(resolve(appRoot, "metadata", "commands.mjs")).href;
+	return (await import(url)) as {
+		readPromptSpecs: (root: string) => PromptSpec[];
+	};
+}
 
 function printHelpLine(usage: string, description: string): void {
 	const width = 30;
@@ -280,8 +297,11 @@ export function resolveInitialPrompt(
 }
 
 export async function main(): Promise<void> {
-	const here = dirname(fileURLToPath(import.meta.url));
-	const appRoot = resolve(here, "..");
+	// appRoot must be the package root (contains package.json). In dev that's
+	// one level above `src/`; in the compiled dist it's two levels above
+	// `dist/src/`. Rather than depending on the layout, walk up until we
+	// find a package.json — that works identically in both modes.
+	const appRoot = findAppRoot(import.meta.url);
 	const zenithVersion = loadPackageVersion(appRoot).version;
 	const bundledSettingsPath = resolve(appRoot, ".zenith", "settings.json");
 	const zenithHome = getZenithHome();
@@ -435,6 +455,12 @@ export async function main(): Promise<void> {
 		return;
 	}
 
+	if (command === "batch") {
+		const { handleBatchCommand } = await import("./batch/commands.js");
+		await handleBatchCommand(rest[0], rest.slice(1));
+		return;
+	}
+
 	if (command === "sync") {
 		const forceFlag = rest.includes("--force");
 		if (forceFlag) {
@@ -487,7 +513,7 @@ export async function main(): Promise<void> {
 		oneShotPrompt: values.prompt,
 		initialPrompt: resolveInitialPrompt(
 			command, rest, values.prompt,
-			new Set(readPromptSpecs(appRoot).filter((s) => s.topLevelCli).map((s) => s.name)),
+			new Set((await importCommandsMetadata(appRoot)).readPromptSpecs(appRoot).filter((s) => s.topLevelCli).map((s) => s.name)),
 			swarmDefault,
 			isDirect,
 		),

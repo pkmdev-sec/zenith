@@ -28,4 +28,4 @@ if (compareNodeVersions(parseNodeVersion(process.versions.node), parseNodeVersio
   process.exit(1);
 }
 await import(new URL("../scripts/patch-embedded-pi.mjs", import.meta.url).href);
-await import(new URL("../dist/index.js", import.meta.url).href);
+await import(new URL("../dist/src/index.js", import.meta.url).href);

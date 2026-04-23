@@ -108,5 +108,5 @@ test("buildPiEnv strips ANTHROPIC_MODEL and related collide-with-pin env vars", 
 test("resolvePiPaths includes the Promise.withResolvers polyfill path", () => {
 	const paths = resolvePiPaths("/repo/zenith");
 
-	assert.equal(paths.promisePolyfillPath, "/repo/zenith/dist/system/promise-polyfill.js");
+	assert.equal(paths.promisePolyfillPath, "/repo/zenith/dist/src/system/promise-polyfill.js");
 });

@@ -95,7 +95,7 @@ export const cliCommandSections = [
 
 export const legacyFlags = [];
 
-export const topLevelCommandNames = ["alpha", "chat", "doctor", "help", "model", "orchestrate", "packages", "search", "setup", "status", "sync", "update"];
+export const topLevelCommandNames = ["alpha", "batch", "chat", "doctor", "help", "model", "orchestrate", "packages", "search", "setup", "status", "sync", "update"];
 
 export function formatSlashUsage(command) {
 	return `/${command.name}${command.args ? ` ${command.args}` : ""}`;

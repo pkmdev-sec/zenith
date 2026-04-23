@@ -24,7 +24,7 @@ export function resolvePiPaths(appRoot: string) {
 	return {
 		piPackageRoot: resolve(appRoot, "node_modules", "@mariozechner", "pi-coding-agent"),
 		piCliPath: resolve(appRoot, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js"),
-		promisePolyfillPath: resolve(appRoot, "dist", "system", "promise-polyfill.js"),
+		promisePolyfillPath: resolve(appRoot, "dist", "src", "system", "promise-polyfill.js"),
 		promisePolyfillSourcePath: resolve(appRoot, "src", "system", "promise-polyfill.ts"),
 		tsxLoaderPath: resolve(appRoot, "node_modules", "tsx", "dist", "loader.mjs"),
 		researchToolsPath: resolve(appRoot, "extensions", "research-tools.ts"),

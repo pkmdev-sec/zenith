@@ -14,3 +14,8 @@ notes/*
 !notes/.gitkeep
 experiments/*
 !experiments/.gitkeep
+
+# Never commit tsc emit artifacts leaking into extensions/ — the build
+# writes to dist/extensions/ only.
+extensions/**/*.js
+extensions/**/*.d.ts

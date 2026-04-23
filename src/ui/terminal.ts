@@ -1,4 +1,17 @@
-import { ZENITH_ASCII_LOGO } from "../../logo.mjs";
+// NOTE: This const mirrors `logo.mjs` at the repo root. Keeping the
+// canonical copy here lets `src/ui/terminal.ts` compile cleanly without
+// any cross-directory relative path that would break in dev (tsx) vs
+// compiled (dist) layouts. `tests/logo.test.ts` enforces that the two
+// stay byte-identical, so `logo.mjs` can still be consumed by
+// `scripts/patch-embedded-pi.mjs` and any external tooling.
+const ZENITH_ASCII_LOGO: readonly string[] = [
+	" ████████  ████████  ██ ██████    ██  ████   █████████  ██ ██████",
+	"     ███  ███    ███ ████    ███ ███   ██        ███    ████    ███",
+	"   ███   ████████████ ███    ███ ███   ██   ██████████  ███     ███",
+	" ███      ███        ████    ███ ███   ██   ███    ███  ███     ███",
+	" ████████   ████████  ████   ███ ███   ██    █████████  ███     ███",
+];
+
 
 export const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
