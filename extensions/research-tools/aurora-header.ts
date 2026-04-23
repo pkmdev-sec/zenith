@@ -79,6 +79,11 @@ function lerpRGB(
 // into the accent color at cell resolution.
 const GRADIENT_CHARS = [" ", " ", "·", "·", "˙", "·", ":", ".", "⋅", "∴", "∵", "∷", "‥", "…", "⁖", "⁘", "⁙"];
 
+// Vertical-bar partial-fill glyphs. Used to draw the aurora as a flowing
+// waveform: each column has a single character whose vertical fill level
+// represents the wave amplitude at that x.
+const PARTIAL_BLOCKS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇"]; // index 0..6
+
 function gradientChar(brightness: number): string {
 	const idx = Math.max(0, Math.min(GRADIENT_CHARS.length - 1, Math.floor(brightness * GRADIENT_CHARS.length)));
 	return GRADIENT_CHARS[idx]!;
@@ -119,29 +124,32 @@ interface AuroraParams {
 	t: number; // seconds
 }
 
-function auroraBrightness(x: number, y: number, p: AuroraParams): number {
-	const { cols, rows, t } = p;
-	// Horizontal position in normalized [0, 1]
+// Wave amplitude at column x, time t. Output is normalized [0, 1] where 1 means
+// the bar reaches the top of the aurora band at that column.
+// Composition: slow base sweep + faster detail + smooth noise, bounded to [0.15, 1]
+// so the ribbon never fully collapses to empty (makes it feel alive, never flat).
+function waveHeight(x: number, cols: number, t: number): number {
 	const nx = x / Math.max(1, cols - 1);
-	// Vertical falloff: peak at mid-upper rows (y ~ rows * 0.35).
-	const yBand = 0.35;
-	const yDist = Math.abs(y / Math.max(1, rows - 1) - yBand);
-	const yFalloff = Math.max(0, 1 - yDist * 2.2);
-	// Two phase-shifted long waves sweep horizontally at slow speed.
-	const wave1 = 0.5 + 0.5 * Math.sin(nx * Math.PI * 2 + t * 0.55);
-	const wave2 = 0.5 + 0.5 * Math.sin(nx * Math.PI * 3.3 - t * 0.31 + 1.7);
-	// Smooth noise breaks up the waves so it doesn't look like a fake curve.
-	const noise = smoothNoise(nx * 7 + t * 0.2, t * 0.18);
-	// Combine: waves dominate, noise adds jitter, yFalloff shapes the band.
-	const combined = (wave1 * 0.5 + wave2 * 0.4 + noise * 0.35) * yFalloff;
-	return Math.max(0, Math.min(1, combined));
+	// Smooth, long-wavelength carrier with a gentle modulation. Frequencies
+	// chosen so we see roughly 1.5–2 full peaks across the whole width, not a
+	// busy fence of local bumps.
+	const carrier = 0.5 + 0.5 * Math.sin(nx * Math.PI * 1.3 + t * 0.35);
+	const detail = 0.5 + 0.5 * Math.sin(nx * Math.PI * 2.6 - t * 0.5 + 1.1);
+	const noise = smoothNoise(nx * 3 + t * 0.25, t * 0.18);
+	// Shape: heavy carrier, light detail + noise. Range ~[0, 1].
+	const raw = carrier * 0.7 + detail * 0.2 + noise * 0.15;
+	// Emphasize the crest so the ribbon has real vertical shape across the 3 rows:
+	// square-root-ish curve stretches the bright half. Baseline allowed to reach
+	// zero (no forced floor), so the band has clear empty regions — not a slab.
+	const shaped = Math.pow(Math.max(0, Math.min(1, raw)), 0.85);
+	return shaped;
 }
 
-function brightnessToRGB(b: number): [number, number, number] {
-	// Ramp: COLD → MID → HOT → CREST
-	if (b < 0.33) return lerpRGB(AURORA_COLD, AURORA_MID, b / 0.33);
-	if (b < 0.7) return lerpRGB(AURORA_MID, AURORA_HOT, (b - 0.33) / 0.37);
-	return lerpRGB(AURORA_HOT, AURORA_CREST, (b - 0.7) / 0.3);
+function levelToRGB(level: number): [number, number, number] {
+	// Solid ribbon palette: mid-blue base → teal mid → cyan-white crest.
+	// Skips the near-black cold tone so the ribbon reads on any dark terminal.
+	if (level < 0.4) return lerpRGB(AURORA_MID, AURORA_HOT, level / 0.4);
+	return lerpRGB(AURORA_HOT, AURORA_CREST, (level - 0.4) / 0.6);
 }
 
 // ── Phase beacons ─────────────────────────────────────────────
@@ -244,7 +252,7 @@ function snapshotActiveSwarm(): SwarmSnapshot | null {
 
 // ── Render ────────────────────────────────────────────────────
 
-export const AURORA_ROWS = 5; // height in terminal rows
+export const AURORA_ROWS = 3; // height in terminal rows
 
 interface RenderParams {
 	width: number;
@@ -257,39 +265,72 @@ export function renderAurora(params: RenderParams): string[] {
 	const cols = Math.max(20, width);
 	const rows = AURORA_ROWS;
 
-	// Build the aurora grid
+	// Per-column wave height in [0, 1].
+	const heights: number[] = new Array(cols);
+	for (let x = 0; x < cols; x++) heights[x] = waveHeight(x, cols, t);
+
+	// Render as a CURVE, not a filled area. For each column, place one glyph
+	// at exactly the row/sub-row where the wave crest sits. All other cells
+	// in that column are blank. This reads as a flowing northern-lights line
+	// instead of a rectangular slab.
+	//
+	// Sub-resolution: 8 partial-block levels per row, so a 3-row band gives
+	// us 24 distinct vertical positions for the crest.
+	const subStepsPerRow = 8;
 	const lines: string[] = [];
-	for (let y = 0; y < rows; y++) {
-		let line = "";
-		for (let x = 0; x < cols; x++) {
-			const b = auroraBrightness(x, y, { cols, rows, t });
-			if (b < 0.05) {
-				line += " ";
-				continue;
+	for (let y = 0; y < rows; y++) lines.push("");
+
+	for (let x = 0; x < cols; x++) {
+		const h = heights[x];
+		// Crest position in absolute sub-rows, counted from the BOTTOM of the band.
+		// h=1 → crest at (rows * subSteps) = top of band; h=0 → crest below visible.
+		const crestSubFromBottom = h * rows * subStepsPerRow;
+		// Map to (row index from top, partial index within that row).
+		// row 0 is the TOP row, row (rows-1) is BOTTOM.
+		// crestSubFromTop = totalSub - crestSubFromBottom
+		const totalSub = rows * subStepsPerRow;
+		const crestSubFromTop = totalSub - crestSubFromBottom;
+		const crestRow = Math.min(rows - 1, Math.floor(crestSubFromTop / subStepsPerRow));
+		const offsetInRow = subStepsPerRow - 1 - (Math.floor(crestSubFromTop) % subStepsPerRow);
+		// partial index 0..7 where 0 is the smallest (▁) and 7 is full (█)
+		const partial = Math.max(0, Math.min(subStepsPerRow - 1, offsetInRow));
+
+		// Place glyph on crestRow, blanks on all other rows.
+		// Color by absolute crest height — taller crests glow brighter/whiter.
+		const color = levelToRGB(h);
+		const glyph = partial === 0 ? "▁" : partial === subStepsPerRow - 1 ? "█" : PARTIAL_BLOCKS[partial - 1] ?? "█";
+
+		for (let y = 0; y < rows; y++) {
+			if (y === crestRow && h > 0.02) {
+				lines[y] += rgb(color, glyph);
+			} else {
+				lines[y] += " ";
 			}
-			const ch = gradientChar(b);
-			const color = brightnessToRGB(b);
-			line += rgb(color, ch);
 		}
-		lines.push(line);
 	}
 
-	// Occasional stars on the top row (deterministic per position + slow time window)
-	const starLine0 = lines[0];
-	const starChars = starLine0.split("");
-	// (Splitting an ANSI-colored string is ugly; simpler to overlay by rebuilding row 0 raw.)
-	// We rebuild row 0 with occasional sparkles:
+	// Star overlay on the top row: sparkles in otherwise-empty cells only.
 	let row0 = "";
-	const timeWindow = Math.floor(t / 2.0); // stars shift every 2s
+	const timeWindow = Math.floor(t / 2.0);
+	// Re-walk column-by-column to decide star vs bar-glyph. The already-built
+	// lines[0] holds ANSI-colored glyphs; easier to rebuild it here.
 	for (let x = 0; x < cols; x++) {
-		const h = hash(x * 17 + timeWindow * 101, timeWindow);
-		const b = auroraBrightness(x, 0, { cols, rows, t });
-		if (h > 0.985 && b < 0.3) {
+		const h = heights[x];
+		const totalSub = rows * subStepsPerRow;
+		const crestSubFromTop = totalSub - h * rows * subStepsPerRow;
+		const crestRow = Math.min(rows - 1, Math.floor(crestSubFromTop / subStepsPerRow));
+		const hh = hash(x * 17 + timeWindow * 101, timeWindow);
+
+		if (crestRow === 0 && h > 0.02) {
+			// Keep the crest glyph
+			const offsetInRow = subStepsPerRow - 1 - (Math.floor(crestSubFromTop) % subStepsPerRow);
+			const partial = Math.max(0, Math.min(subStepsPerRow - 1, offsetInRow));
+			const glyph = partial === 0 ? "▁" : partial === subStepsPerRow - 1 ? "█" : PARTIAL_BLOCKS[partial - 1] ?? "█";
+			row0 += rgb(levelToRGB(h), glyph);
+		} else if (hh > 0.985) {
 			row0 += rgb(STAR, "˙");
-		} else if (b < 0.05) {
-			row0 += " ";
 		} else {
-			row0 += rgb(brightnessToRGB(b), gradientChar(b));
+			row0 += " ";
 		}
 	}
 	lines[0] = row0;
