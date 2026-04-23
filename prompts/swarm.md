@@ -51,7 +51,7 @@ Lens: {lens}
 Stance: {stance}
 Sub-question: {specific question}
 Search strategy: Prioritize {tools}
-Output file: outputs/.swarm/<slug>/research/{agent-id}.md
+Output file: ~/.zenith/swarm-work/<slug>/research/{agent-id}.md
 ```
 
 Use `async: true, clarify: false` for all agents. Spawn in batches of 10-20 to manage
@@ -74,7 +74,7 @@ Spawn debate agents that read ALL research outputs. Each focuses on one dimensio
 6. **Temporal Analyst** — How have findings on this topic evolved over time?
 7. **Synthesis Mapper** — What unexpected connections emerged across domains?
 
-Each debate agent writes to `outputs/.swarm/<slug>/debate/{dimension}.md`.
+Each debate agent writes to `~/.zenith/swarm-work/<slug>/debate/{dimension}.md`.
 `save_checkpoint` stage='debate'.
 
 ## Phase 4: VERIFICATION SWARM
@@ -89,7 +89,7 @@ Each verifier independently:
    - **CONTRADICTED**: Found evidence that directly contradicts the claim
    - **DEAD**: Source URL is broken or paper not found
 
-Each verifier writes to `outputs/.swarm/<slug>/verify/{verifier-id}.md`.
+Each verifier writes to `~/.zenith/swarm-work/<slug>/verify/{verifier-id}.md`.
 `save_checkpoint` stage='verify'.
 
 ## Phase 5: SYNTHESIS

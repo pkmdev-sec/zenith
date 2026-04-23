@@ -1,14 +1,11 @@
 import { isLoggedIn as isAlphaLoggedIn, login as loginAlpha } from "@companion-ai/alpha-hub/lib";
 
-import { getDefaultSessionDir, getZenithHome } from "../config/paths.js";
-import { getPiWebAccessStatus, getPiWebSearchConfigPath } from "../pi/web-access.js";
+import { getPiWebAccessStatus } from "../pi/web-access.js";
 import { normalizeZenithSettings } from "../pi/settings.js";
 import type { ThinkingLevel } from "../pi/settings.js";
 import { getCurrentModelSpec, runModelSetup } from "../model/commands.js";
-import { buildModelStatusSnapshotFromRecords, getAvailableModelRecords, getSupportedModelRecords } from "../model/catalog.js";
 import { PANDOC_FALLBACK_PATHS, resolveExecutable } from "../system/executables.js";
 import { setupPreviewDependencies } from "./preview.js";
-import { runDoctor } from "./doctor.js";
 import { printInfo, printSection, printSuccess } from "../ui/terminal.js";
 
 type SetupOptions = {
@@ -57,11 +54,6 @@ export async function runSetup(options: SetupOptions): Promise<void> {
 		options.authPath,
 	);
 
-	const modelStatus = buildModelStatusSnapshotFromRecords(
-		getSupportedModelRecords(options.authPath),
-		getAvailableModelRecords(options.authPath),
-		getCurrentModelSpec(options.settingsPath),
-	);
 	printSection("Ready");
 	printInfo(`Model: ${getCurrentModelSpec(options.settingsPath) ?? "not set"}`);
 	printInfo(`alphaXiv: ${isAlphaLoggedIn() ? "configured" : "not configured"}`);

@@ -196,4 +196,4 @@ Write a provenance record alongside it as `<slug>.provenance.md`:
 
 If the user wants unattended execution or the sweep will clearly take a while:
 - Launch the full workflow via `subagent` using `clarify: false, async: true`
-- Report the async ID and how to check status with `subagent_status`
+- Report the async ID and how to check status with `subagent` with `status: <id>`

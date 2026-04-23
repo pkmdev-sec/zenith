@@ -5,23 +5,21 @@ description: Preview Markdown, LaTeX, PDF, or code artifacts in the browser or a
 
 # Preview
 
-Use the `/preview` command to render and open artifacts.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/preview` | Preview the most recent artifact in the browser |
-| `/preview --file <path>` | Preview a specific file |
-| `/preview-browser` | Force browser preview |
-| `/preview-pdf` | Export to PDF via pandoc + LaTeX |
-| `/preview-clear-cache` | Clear rendered preview cache |
+Use the `/preview` command to render and open artifacts (provided by `npm:pi-markdown-preview`).
 
 ## Fallback
 
-If the preview commands are not available, use bash:
+If the preview command isn't available or the user wants a specific format, use bash:
 
 ```bash
 open <file.md>          # macOS — opens in default app
 open <file.pdf>         # macOS — opens in Preview
+xdg-open <file.md>      # Linux
+start <file.md>         # Windows
+```
+
+For PDF export of markdown, use `pandoc` directly:
+
+```bash
+pandoc input.md -o output.pdf --pdf-engine=xelatex
 ```

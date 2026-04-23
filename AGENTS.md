@@ -66,12 +66,14 @@ The swarm runs a 6-phase pipeline, enforced by code gates:
 
 Every run derives a short **slug** from the topic (lowercase, hyphens, no filler words, ≤5 words). All files in a single run use that slug:
 
-- Scout output: `scout-landscape.json`
-- Persona outputs: `personas/`
-- Council maps: `councils/`
-- Challenger logs: `challengers/`
-- Build chain drafts: `build-chain/`
-- Quality gate result: `quality-gate.json`
+- Events log: `events.jsonl` (append-only swarm timeline)
+- Swarm manifest: `manifest.md`
+- Scout output: `scout/` (scout-phase agent outputs)
+- Research outputs: `research/` (persona-agent findings)
+- Debate outputs: `debate/` (cross-examination council + challenger outputs)
+- Verification outputs: `verify/` (citation-check and claim-verification reports)
+- Build chain: `build/` (synthesizer/writer/reviewer drafts, final artifact)
+- Checkpoints: `checkpoints/` (per-stage resume state from save_checkpoint)
 
 Never use generic names like `research.md` or `draft.md`. Concurrent runs must not collide.
 
@@ -85,7 +87,7 @@ Never use generic names like `research.md` or `draft.md`. Concurrent runs must n
 
 ## Provenance and verification
 
-- Every output from `/deep-research` includes verification metadata in the quality gate result.
+- Every output from `/deepresearch` includes verification metadata in the quality gate result.
 - Source verification and citation cleanup belong in the verification phase, not in ad hoc edits after delivery.
 - If a workflow uses the words `verified`, `confirmed`, or `checked`, the underlying artifact should record what was actually checked and how.
 - Never smooth over missing checks. Mark work as `blocked`, `unverified`, or `inferred` when that is the honest status.

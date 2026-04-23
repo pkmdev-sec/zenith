@@ -16,7 +16,7 @@ Topic/request: $@
 Use `classify_intent` on the user's request.
 
 - If `explicitWorkflow` is set → tell the user to use that slash command directly
-  (e.g., "This looks like a literature review — run `/lit` for a dedicated workflow.").
+  (e.g., "This looks like a literature review — run `/deepresearch` instead.").
   Do not proceed further.
 - If `isResearch` is false → answer the question directly. No swarm, no subagents.
   Single-fact lookups, definitions, and yes/no answers get immediate responses.

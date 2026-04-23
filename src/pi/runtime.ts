@@ -99,6 +99,8 @@ export function buildPiEnv(options: PiRuntimeOptions): NodeJS.ProcessEnv {
 		ZENITH_MEMORY_DIR: resolve(dirname(options.zenithAgentDir), "memory"),
 		ZENITH_NODE_EXECUTABLE: process.execPath,
 		ZENITH_BIN_PATH: resolve(options.appRoot, "bin", "zenith.js"),
+		// Exposed for consumers/integrations that inspect the Zenith env. Internal
+		// npm prefix handling uses NPM_CONFIG_PREFIX/npm_config_prefix below.
 		ZENITH_NPM_PREFIX: zenithNpmPrefixPath,
 		// Ensure the Pi child process uses Zenith's agent dir for auth/models/settings.
 		PI_CODING_AGENT_DIR: options.zenithAgentDir,

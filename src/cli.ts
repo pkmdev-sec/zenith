@@ -334,7 +334,6 @@ export async function main(): Promise<void> {
 
 	const zenithSettings = readJson(zenithSettingsPath);
 	process.env.ZENITH_MAX_AGENTS = String((zenithSettings.swarm as Record<string, unknown>)?.maxAgentsPerRequest ?? 200);
-	process.env.ZENITH_BUDGET_MULTIPLIER = String((zenithSettings.swarm as Record<string, unknown>)?.budgetMultiplier ?? 1.0);
 	const swarmDefault = (zenithSettings.swarm as any)?.swarmDefault !== false;
 	const isDirect = values.direct === true;
 

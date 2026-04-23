@@ -30,7 +30,7 @@ $ zenith --direct "what is RLHF"
 ```
 
 ```
-$ zenith /deepresearch "mechanistic interpretability"
+$ zenith deepresearch "mechanistic interpretability"
 → Full 300-500 agent swarm with extended verification
 → Scout → Research → Cross-Examination → Verification → Build → Quality Gate
 → ~/research/mechanistic-interpretability.md
@@ -168,8 +168,8 @@ Seven slash commands. That's it.
 
 | Skill | What it does |
 |---|---|
-| `/deep-research` | Full 300–500 agent expensive-tier swarm |
-| `/swarm-research` | Broad-tier 100–200 agent swarm (also the default for bare questions) |
+| `/deepresearch` | Full 300–500 agent expensive-tier swarm |
+| `/swarm` | Broad-tier 100–200 agent swarm (also the default for bare questions) |
 | `/export` | Export session as BibTeX, CSV, or JSON |
 | `/eli5` | Plain-language explanation of complex research |
 | `/session-search` | Search across past research sessions |

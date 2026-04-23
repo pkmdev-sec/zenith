@@ -1,1 +1,0 @@
-The first write captured d1–d5 plus most of d6. Now I'll append the rest — completing d6 and adding all 22 c-files — by writing the full remainder.

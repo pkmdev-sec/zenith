@@ -15,7 +15,6 @@ Zenith is a research-first CLI built on Pi and alphaXiv. This guide is for human
 - Bundled prompt templates: `prompts/`
 - Bundled Pi skills: `skills/`
 - Bundled Pi subagent prompts: `.zenith/agents/`
-- Docs site: `website/`
 - Build/release scripts: `scripts/`
 - Generated research artifacts: `outputs/`, `papers/`, `notes/`
 
@@ -37,14 +36,6 @@ npm install
 ```bash
 npm test
 npm run typecheck
-npm run build
-```
-
-5. If you changed the docs site, also validate the website:
-
-```bash
-cd website
-npm install
 npm run build
 ```
 
@@ -82,9 +73,8 @@ npm run build
 - When changing release-sensitive behavior, check the version story across:
   - `.nvmrc`
   - `package.json`
-  - `website/package.json`
   - `scripts/check-node-version.mjs`
-  - install docs in `README.md` and `website/src/content/docs/getting-started/installation.md`
+  - install instructions in `README.md`
 
 ## AI-Assisted Contributions
 

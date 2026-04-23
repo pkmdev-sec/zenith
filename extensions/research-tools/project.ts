@@ -107,7 +107,7 @@ export function registerOutputsCommand(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => {
 			const items = await collectArtifacts(ctx.cwd);
 			if (items.length === 0) {
-				ctx.ui.notify("No artifacts found. Use /lit, /draft, /review, or /deepresearch to create some.", "info");
+				ctx.ui.notify("No artifacts found. Run /deepresearch or /orchestrate to produce some.", "info");
 				return;
 			}
 
