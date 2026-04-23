@@ -97,9 +97,14 @@ function extractToolReferences(text) {
 function extractSlashCommands(text) {
 	const names = new Set();
 	// Only count slash-commands that look like the LLM should type them:
-	// preceded by whitespace, start-of-line, or backtick; not by a word char or /
-	// (which indicates a path segment or URL).
-	for (const m of text.matchAll(/(?:^|[\s`"(])\/([a-z][a-z0-9_-]*)/gm)) {
+	//   - preceded by whitespace, start-of-line, backtick, quote, or open-paren
+	//   - NOT part of a URL/path: if the char immediately after the word is a
+	//     digit or `/`, this is a path segment (e.g. /v1/messages, /api/2).
+	//   - NOT preceded by a word char (excluded by the preceding-char set).
+	const re = /(?:^|[\s`"(])\/([a-z][a-z0-9_-]*)(.?)/gm;
+	for (const m of text.matchAll(re)) {
+		const nextChar = m[2] ?? "";
+		if (nextChar === "/" || /[0-9]/.test(nextChar)) continue; // path-like
 		names.add(m[1]);
 	}
 	return names;
