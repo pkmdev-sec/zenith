@@ -81,32 +81,31 @@ async function initSwarm(tools: Record<string, AnyTool>, slug: string, opts: { b
 // ── Tests ──
 
 describe("run_swarm minimum agent enforcement", () => {
-	it("rejects broad plan with <100 agents", async () => {
+	it("rejects plans with <10 personas (MiroFish minimum)", async () => {
 		const { tools } = makeMockPi();
-		const res = await initSwarm(tools, "test-too-few", { agents: 50, budget: "broad" });
+		const res = await initSwarm(tools, "test-too-few", { agents: 5, budget: "broad" });
 		assert.equal(res.details.rejected, true, "should reject");
-		assert.equal(res.details.minRequired, 100);
+		assert.equal(res.details.minRequired, 10);
 	});
 
-	it("accepts broad plan with >=100 agents", async () => {
+	it("accepts plans with >=10 personas", async () => {
 		const { tools } = makeMockPi();
-		const res = await initSwarm(tools, "test-broad-ok", { agents: 100, budget: "broad" });
+		const res = await initSwarm(tools, "test-broad-ok", { agents: 30, budget: "broad" });
 		assert.ok(!res.details.rejected, `should accept, got ${JSON.stringify(res.details)}`);
+		assert.equal(res.details.totalAgents, 30);
+	});
+
+	it("accepts expensive plan with >=10 personas (no tier-specific minimum anymore)", async () => {
+		const { tools } = makeMockPi();
+		const res = await initSwarm(tools, "test-expensive-ok", { agents: 30, budget: "expensive" });
+		assert.ok(!res.details.rejected, `should accept ${res.details.totalAgents} agents, got: ${JSON.stringify(res.details)}`);
+	});
+
+	it("accepts large plan in either budget tier", async () => {
+		const { tools } = makeMockPi();
+		const res = await initSwarm(tools, "test-large-ok", { agents: 100, budget: "expensive" });
+		assert.ok(!res.details.rejected, `should accept 100 agents, got ${JSON.stringify(res.details)}`);
 		assert.equal(res.details.totalAgents, 100);
-	});
-
-	it("rejects expensive plan with <300 agents (was 200 before fix)", async () => {
-		const { tools } = makeMockPi();
-		const res = await initSwarm(tools, "test-expensive-reject", { agents: 250, budget: "expensive" });
-		assert.equal(res.details.rejected, true, "should reject expensive plan with <300 agents");
-		assert.equal(res.details.minRequired, 300);
-	});
-
-	it("accepts expensive plan with >=300 agents", async () => {
-		const { tools } = makeMockPi();
-		const res = await initSwarm(tools, "test-expensive-ok", { agents: 300, budget: "expensive" });
-		assert.ok(!res.details.rejected, `should accept 300 agents for expensive, got ${JSON.stringify(res.details)}`);
-		assert.equal(res.details.totalAgents, 300);
 	});
 });
 
@@ -258,3 +257,74 @@ describe("deliver_artifact", () => {
 function goodArtifact(tag: string): string {
 	return `# Report ${tag}\n\nSome claim [1] and another [2].\n\n## Sources\n\n1. First source at https://example.com/a\n2. Second source at https://example.com/b\n\n${"x".repeat(500)}\n`;
 }
+
+
+describe("run_swarm MiroFish mode (personas + rounds + executionMode)", () => {
+	it("accepts a personas[] plan with 3 rounds", async () => {
+		const { tools } = makeMockPi();
+		const personas = Array.from({ length: 12 }, (_, i) => ({
+			id: `statistics-specialist-${String(i).padStart(2, "0")}`,
+			agent: "statistics-specialist",
+			subQuestion: `sub-question ${i}`,
+			lens: i % 2 === 0 ? "empiricist" : "critic",
+			stance: i % 3 === 0 ? "advocate" : "skeptic",
+		}));
+		const res = await callTool(tools, "run_swarm", {
+			slug: "mf-mode",
+			query: "test",
+			phases: [{ name: "scout", agents: ["scout"] }],
+			personas,
+			rounds: 3,
+			executionMode: "sync",
+			budget: "broad",
+		});
+		assert.ok(!res.details.rejected, `should accept MiroFish plan, got: ${JSON.stringify(res.details).slice(0, 200)}`);
+	});
+
+	it("rejects personas[] with fewer than 10", async () => {
+		const { tools } = makeMockPi();
+		const personas = [{ id: "p1", agent: "statistics-specialist", subQuestion: "q" }];
+		const res = await callTool(tools, "run_swarm", {
+			slug: "mf-too-few",
+			query: "test",
+			phases: [{ name: "scout", agents: ["scout"] }],
+			personas,
+			rounds: 3,
+			budget: "broad",
+		});
+		assert.equal(res.details.rejected, true);
+		assert.equal(res.details.personaCount, 1);
+	});
+
+	it("rejects MiroFish plan with fewer than 2 rounds", async () => {
+		const { tools } = makeMockPi();
+		const personas = Array.from({ length: 12 }, (_, i) => ({
+			id: `p-${i}`, agent: "statistics-specialist", subQuestion: "q",
+		}));
+		const res = await callTool(tools, "run_swarm", {
+			slug: "mf-too-short",
+			query: "test",
+			phases: [{ name: "scout", agents: ["scout"] }],
+			personas,
+			rounds: 1,
+			budget: "broad",
+		});
+		assert.equal(res.details.rejected, true);
+		assert.equal(res.details.rounds, 1);
+	});
+
+	it("defaults rounds=3 and executionMode=sync when personas[] is set without them", async () => {
+		const { tools } = makeMockPi();
+		const personas = Array.from({ length: 10 }, (_, i) => ({
+			id: `p-${i}`, agent: "statistics-specialist", subQuestion: "q",
+		}));
+		const res = await callTool(tools, "run_swarm", {
+			slug: "mf-defaults",
+			query: "test",
+			phases: [{ name: "scout", agents: ["scout"] }],
+			personas,
+			budget: "broad",
+		});
+		assert.ok(!res.details.rejected, "should accept default defaults");
+	});
+});

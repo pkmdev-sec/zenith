@@ -69,6 +69,18 @@ interface SwarmPlan {
 	query: string;
 	phases: SwarmPhase[];
 	budget?: "broad" | "expensive" | BudgetLimits;
+	// MiroFish-inspired fields (optional for backwards compat — phases[] still works).
+	personas?: SwarmPersona[];
+	rounds?: number;          // default 3: scout(r0) + investigate(r1) + cross-examine(r2)
+	executionMode?: "sync" | "batch"; // default "sync"
+}
+
+interface SwarmPersona {
+	id: string;               // unique per run, e.g. "statistics-specialist-01"
+	agent: string;             // template file name in .zenith/agents/
+	subQuestion: string;        // the focused question this persona investigates
+	lens?: string;              // empiricist | theorist | critic | practitioner | historian | methodologist
+	stance?: string;            // advocate | skeptic | neutral | contrarian
 }
 
 interface BudgetTracker {
@@ -289,24 +301,47 @@ function buildManifest(plan: SwarmPlan, limits: BudgetLimits): string {
 		`**Query:** ${plan.query}`,
 		`**Created:** ${new Date().toISOString()}`,
 		`**Budget:** ${limits.maxTokens.toLocaleString()} tokens / ${limits.maxAgents} agents / ${limits.maxWallClockMs > 0 ? `${(limits.maxWallClockMs / 1000).toFixed(0)}s wall clock` : "no time limit"}`,
-		``,
-		`## Phases`,
-		``,
 	];
 
-	for (const [i, phase] of plan.phases.entries()) {
-		lines.push(`### ${i + 1}. ${phase.name}`);
+	if (plan.personas && plan.personas.length > 0) {
+		// MiroFish-mode manifest: personas × rounds × execution mode.
+		lines.push(`**Execution:** ${plan.executionMode ?? "sync"} mode · ${plan.rounds ?? 3} rounds`);
 		lines.push(``);
-		for (const agent of phase.agents) {
-			lines.push(`- [ ] ${agent}`);
+		lines.push(`## Personas (${plan.personas.length})`);
+		lines.push(``);
+		lines.push(`| id | agent template | lens | stance | sub-question |`);
+		lines.push(`|---|---|---|---|---|`);
+		for (const persona of plan.personas) {
+			lines.push(`| ${persona.id} | ${persona.agent} | ${persona.lens ?? ""} | ${persona.stance ?? ""} | ${persona.subQuestion.slice(0, 80)}${persona.subQuestion.length > 80 ? "…" : ""} |`);
 		}
 		lines.push(``);
 	}
 
+	if (plan.phases && plan.phases.length > 0) {
+		lines.push(``);
+		lines.push(`## Phases`);
+		lines.push(``);
+		for (const [i, phase] of plan.phases.entries()) {
+			lines.push(`### ${i + 1}. ${phase.name}`);
+			lines.push(``);
+			for (const agent of phase.agents) {
+				lines.push(`- [ ] ${agent}`);
+			}
+			lines.push(``);
+		}
+	}
+
 	const totalAgents = plan.phases.reduce((sum, p) => sum + p.agents.length, 0);
+	const personaCount = plan.personas?.length ?? 0;
 	lines.push(`---`);
-	lines.push(`**Total agents:** ${totalAgents}`);
-	lines.push(`**Total phases:** ${plan.phases.length}`);
+	if (personaCount > 0) {
+		const callCount = personaCount * (plan.rounds ?? 3) + 3; // +3 for scout, synth, review
+		lines.push(`**Personas:** ${personaCount} × ${plan.rounds ?? 3} rounds ≈ ${callCount} LLM calls`);
+	}
+	if (totalAgents > 0) {
+		lines.push(`**Total agents (phases):** ${totalAgents}`);
+		lines.push(`**Total phases:** ${plan.phases.length}`);
+	}
 
 	return lines.join("\n");
 }
@@ -603,10 +638,26 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				Type.Object({
 					name: Type.String({ description: "Phase name: scout, research, debate, verify, build, or custom" }),
 					agents: Type.Array(Type.String(), {
-						description: "List of agent identifiers to run in this phase",
+						description: "Agent IDs that run in this phase",
 					}),
 				}),
-				{ description: "Ordered list of execution phases, each with its agent roster" },
+				{ description: "Ordered list of pipeline phases with their agent rosters. Use this OR 'personas' + 'rounds' (MiroFish mode); don't combine." },
+			),
+			personas: Type.Optional(Type.Array(
+				Type.Object({
+					id: Type.String({ description: "Unique persona id for this run (e.g. 'statistics-specialist-01')" }),
+					agent: Type.String({ description: "Agent template file name (matches .zenith/agents/<name>.md)" }),
+					subQuestion: Type.String({ description: "The sub-question this persona investigates" }),
+					lens: Type.Optional(Type.String({ description: "empiricist | theorist | critic | practitioner | historian | methodologist" })),
+					stance: Type.Optional(Type.String({ description: "advocate | skeptic | neutral | contrarian" })),
+				}),
+				{ description: "MiroFish mode: declarative persona list. Each persona runs once per round." },
+			)),
+			rounds: Type.Optional(Type.Number({ description: "Number of rounds in MiroFish mode. Default: 3 (scout r0 + investigate r1 + cross-examine r2). Synthesize runs after all rounds." })),
+			executionMode: Type.Optional(
+				Type.Union([Type.Literal("sync"), Type.Literal("batch")],
+					{ description: "'sync' = rate-limited queue (default; runs inline). 'batch' = Anthropic Batches API (50% discount, returns batch id, check back later)." },
+				),
 			),
 			budget: Type.Optional(
 				Type.Union([
@@ -628,15 +679,28 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			// ── Enforce minimum agent count ──
 			const totalAgents = params.phases.reduce((sum, p) => sum + p.agents.length, 0);
 
-			const MIN_AGENTS_BROAD = 100;
-			const MIN_AGENTS_EXPENSIVE = 300;
+			// Persona/agent count validation. MiroFish-style rounds × personas is the
+			// real dispatch shape; legacy phases[] is also accepted. Min 10 personas is
+			// the floor for emergent-consensus dynamics (below ~10, you get single
+			// viewpoints dressed as consensus).
 			const scaleStr = typeof params.budget === "string" ? params.budget : "broad";
-			const minRequired = scaleStr === "expensive" ? MIN_AGENTS_EXPENSIVE : MIN_AGENTS_BROAD;
-
-			if (totalAgents < minRequired) {
+			const MIN_PERSONAS = 10;
+			const personaCount = params.personas ? params.personas.length : totalAgents;
+			if (personaCount < MIN_PERSONAS) {
+				const mode = params.personas ? "personas" : "phases agents";
 				return {
-					content: [{ type: "text", text: `REJECTED: Plan has only ${totalAgents} agents. Minimum for '${scaleStr}' tier is ${minRequired}. Redesign the plan with more diverse researchers — add domain specialists, different lenses (empiricist/theorist/practitioner/critic/historian/methodologist), and different stances (advocate/skeptic/neutral/contrarian). Every research request deserves thorough investigation.` }],
-					details: { rejected: true, totalAgents, minRequired, scale: scaleStr } as Record<string, unknown>,
+					content: [{ type: "text", text: `REJECTED: Plan has only ${personaCount} ${mode}. Minimum is ${MIN_PERSONAS} for meaningful multi-perspective research. Recommended defaults: 30 for sync mode, 100 for batch mode. Add more diverse personas — different lenses (empiricist/theorist/critic/practitioner/historian/methodologist), different stances (advocate/skeptic/neutral/contrarian).` }],
+					details: { rejected: true, personaCount, minRequired: MIN_PERSONAS, scale: scaleStr } as Record<string, unknown>,
+				};
+			}
+
+			// Rounds validation: default to 3 if using personas mode.
+			const rounds = params.rounds ?? (params.personas ? 3 : 1);
+			const executionMode = params.executionMode ?? "sync";
+			if (params.personas && rounds < 2) {
+				return {
+					content: [{ type: "text", text: `REJECTED: MiroFish-style runs need at least 2 rounds (investigate + cross-examine) for social evolution. Got ${rounds}.` }],
+					details: { rejected: true, rounds } as Record<string, unknown>,
 				};
 			}
 
@@ -655,6 +719,9 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				query: params.query,
 				phases: params.phases,
 				budget: params.budget as SwarmPlan["budget"],
+				personas: params.personas,
+				rounds,
+				executionMode,
 			};
 			const manifestPath = resolve(swarmDir, "manifest.md");
 			writeFileSync(manifestPath, buildManifest(plan, limits), "utf-8");
@@ -668,6 +735,9 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				query: params.query,
 				totalAgents,
 				phaseCount: params.phases.length,
+				personaCount: params.personas?.length ?? 0,
+				rounds,
+				executionMode,
 				maxTokens: limits.maxTokens,
 				maxAgents: limits.maxAgents,
 				maxWallClockMs: limits.maxWallClockMs,
