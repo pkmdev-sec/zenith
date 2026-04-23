@@ -64,7 +64,7 @@ function printHelpLine(usage: string, description: string): void {
 
 function printHelp(appRoot: string): void {
 	printAsciiHeader([
-		"MiroFish-inspired research agent — 100-500 agents per question.",
+		"MiroFish-inspired research agent — multi-round persona swarm with evidence graph.",
 		"Just ask. The swarm handles the rest.",
 	]);
 

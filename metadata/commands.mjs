@@ -88,7 +88,7 @@ export const cliCommandSections = [
 	{
 		title: "Research Workflows",
 		commands: [
-			{ usage: "zenith orchestrate <request>", description: "MiroFish-inspired swarm research — 100-500 agents, multi-agent consensus" },
+			{ usage: "zenith orchestrate <request>", description: "MiroFish-inspired swarm research — 30 personas × 3 rounds, shared evidence graph" },
 		],
 	},
 ];

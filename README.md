@@ -3,7 +3,7 @@
     <img src="assets/hero.png" alt="Zenith" width="800" />
   </a>
 </p>
-<p align="center">zenith swarm research agent</p>
+<p align="center">zenith — MiroFish-inspired research agent</p>
 
 ---
 
@@ -13,186 +13,228 @@
 npm install -g zenith-agent
 ```
 
-Requires Node.js 20.19.0+. First run: `zenith setup` walks you through provider auth.
+Requires Node.js 20.19.0+. First run: `zenith setup` walks you through
+Anthropic auth. Zenith is **pinned to a single model — Anthropic
+`claude-opus-4-6`** — so there is no model to choose. One research question,
+one model, every role (researcher, verifier, reviewer, synthesizer, every
+domain specialist). Pinning is enforced in code, not just the prompt.
 
 ## What you type → what happens
 
 ```
-$ zenith "what do we know about scaling laws"
-→ Dispatches 100-200 research agents across the topic
-→ Councils cross-examine, challengers poke holes
-→ Drops a verified report at ~/research/scaling-laws.md
+$ zenith "what do we know about scaling laws for tool-using agents"
+→ Scout maps the landscape (round 0)
+→ ~30 domain personas investigate in parallel (round 1), each with
+  its own memory file and a shared evidence graph
+→ The same personas cross-examine each other's round-1 claims (round 2),
+  producing support / contradict / qualify edges
+→ Synthesizer → Verifier → Reviewer → `deliver_artifact` quality gate
+→ Drops a verified report at ~/research/scaling-laws-tool-agents.md
 ```
 
 ```
 $ zenith --direct "what is RLHF"
-→ Single agent, straight answer, no swarm
+→ Single-agent answer, no swarm.
 ```
 
 ```
-$ zenith deepresearch "mechanistic interpretability"
-→ Full 300-500 agent swarm with extended verification
-→ Scout → Research → Cross-Examination → Verification → Build → Quality Gate
-→ ~/research/mechanistic-interpretability.md
+$ zenith "mechanistic interpretability in small LLMs" --batched
+→ Personas submitted as one Anthropic Message Batch (50% cost, bypasses
+  RPM limits, typically 5–30 min turnaround). Zenith returns a batch id.
+→ `zenith batch status <id>` — live progress
+→ `zenith batch collect <id>` — ingest round-N results into the evidence
+  graph + persona memory, then round N+1 can proceed
 ```
 
-Every research question goes through the swarm by default. `--direct` is the escape hatch for when you just want a quick answer.
+Every research question goes through the swarm by default. `--direct` is
+the escape hatch for quick lookups.
 
 ---
 
 ## How the swarm works
 
-When you ask Zenith a question, the CLI routes it into a 6-phase pipeline. There is no "maybe spawn agents" — the code enforces a minimum of 100 agents on every research question.
+The architecture is adapted from [MiroFish](https://github.com/666ghj/MiroFish) — a
+multi-round, memory-persistent research swarm — and the Anthropic
+[Message Batches API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing).
+The core idea: N personas don't just fan out once; they **iterate across
+rounds while sharing an evidence graph**, so round 2 can react to round 1.
 
 ```mermaid
 graph LR
-    Q["Your question"] --> R["Code Router<br/>(cli.ts)"]
-    R -->|research| O["/orchestrate"]
-    R -->|trivial| D["Direct answer"]
-    R -->|--direct| D
-    
-    O --> S["Scout<br/>landscape recon"]
-    S --> RS["Research Swarm<br/>100-500 agents"]
-    RS --> CX["Cross-Examination<br/>councils + challengers"]
-    CX --> V["Verification<br/>citation checking"]
-    V --> B["Build Chain<br/>synthesizer → writer<br/>→ verifier → reviewer"]
-    B --> QG["Quality Gate<br/>deliver_artifact"]
+    Q["Your question"] --> O["/orchestrate"]
+    O --> S["Round 0: Scout<br/>landscape recon"]
+    S --> R1["Round 1: Personas<br/>investigate + assert"]
+    R1 --> EG[("Evidence<br/>graph")]
+    R1 --> MEM[("Persona<br/>memory")]
+    EG --> R2["Round 2: Personas<br/>cross-examine<br/>support / contradict / qualify"]
+    MEM --> R2
+    R2 --> EG
+    R2 --> SY["Synthesizer"]
+    SY --> V["Verifier"]
+    V --> RV["Reviewer"]
+    RV --> QG["deliver_artifact gate"]
     QG --> OUT["~/research/slug.md"]
 ```
 
-**Scout** — Runs landscape recon on the topic. Identifies key subtopics, active debates, landmark papers, and knowledge gaps. This shapes how the swarm divides its work.
+**Round 0 — Scout.** Landscape recon: key subtopics, live debates, landmark
+papers, named open questions. Shapes how personas are chosen.
 
-**Research Swarm** — 100–500 agents fan out across the topic. Each agent is a unique persona — a combination of domain expertise, analytical lens, and epistemic stance. A question about RLHF might get a reinforcement learning theorist, a safety researcher arguing from first principles, a practitioner who's shipped RLHF systems, and 97+ more perspectives.
+**Round 1 — Investigate.** Each persona reads the scout output, does its
+own evidence gathering, and commits claims to the shared evidence graph
+(`append_evidence kind=assertion`) and its own memory file
+(`append_persona_memory kind=claim`). Personas never see each other's
+work in round 1.
 
-**Cross-Examination** — Councils find consensus. Challengers attack it. Nothing passes through without being stress-tested from multiple angles.
+**Round 2 — Cross-examine.** Each persona reads every *other* persona's
+round-1 assertions via `query_evidence_graph`. For each claim they care
+about they append a `support`, `contradict`, or `qualify` edge. The graph
+now records not just opinions but the *shape* of agreement and dissent.
 
-**Verification** — Every citation gets checked. Dead links get flagged. Claims without adequate sourcing get removed or marked.
+**Synthesize → Verify → Review → Deliver.** The synthesizer compresses
+the graph (including disputed-claim clusters) into a coherent draft. The
+verifier checks every citation. The reviewer grades severity. Only then
+does `deliver_artifact` write to `~/research/`.
 
-**Build Chain** — The synthesizer compresses hundreds of agent outputs into a coherent narrative. The writer structures it. The verifier double-checks. The reviewer grades it.
+### Execution modes
 
-**Quality Gate** — The `deliver_artifact` gate enforces minimum quality before anything touches `~/research/`. If the report doesn't pass, it loops back.
+| Mode | How persona calls run | Default personas | When |
+|---|---|---|---|
+| `sync`  | Tier-aware token-bucket queue against the `/v1/messages` endpoint | **30** | Default. Fast turnaround, costs full rate. |
+| `batch` | Submitted as one job via `/v1/messages/batches` | **100** | 50% discount, bypasses RPM limits, 5–30 min turnaround. Use for >50 personas or tight rate budgets. |
 
-### Two tiers
-
-| Tier | Agents | When |
-|---|---|---|
-| **Broad** (default) | 100–200 | Every research question |
-| **Expensive** (`/deepresearch`) | 300–500 | When you ask for it explicitly |
+Minimum personas per run is **10** — a gate enforced in `run_swarm`.
 
 ---
 
-## 203 specialist agents
+## Agent roster (28 agents)
+
+Every agent file lives in `.zenith/agents/*.md`. Each specialist carries the
+same "Swarm protocol (MiroFish-style, 3 rounds)" block in its system prompt
+so it knows how to read and write the evidence graph and its memory.
 
 ```mermaid
 graph TD
-    subgraph Personas["Personas (100-500)"]
-        P1["swarm-researcher<br/>domain × lens × stance"]
-        P2["195 domain specialists"]
+    subgraph Infra["Swarm infra (9)"]
+        I1["coordinator"]
+        I2["scout"]
+        I3["researcher"]
+        I4["synthesizer"]
+        I5["writer"]
+        I6["verifier"]
+        I7["reviewer"]
+        I8["debate-agent"]
+        I9["red-team"]
     end
-    
-    subgraph Councils["Councils"]
+
+    subgraph Specialists["Domain specialists (13)"]
+        D1["statistics · transformer · nlp · cv · rl"]
+        D2["robotics · optimization · compiler · security"]
+        D3["genomics · climate-science · ecology · sociology"]
+    end
+
+    subgraph Council["Council / challenger (4)"]
         C1["consensus-mapper"]
-        C2["debate-agent<br/>triangulator · synthesis · temporal"]
-        C3["meta-analysis-specialist"]
+        C2["bias-detector"]
+        C3["reproducibility-checker"]
+        C4["meta-analysis-specialist"]
     end
-    
-    subgraph Challengers["Challengers"]
-        CH1["red-team"]
-        CH2["debate-agent<br/>contrarian · methodology critic"]
-        CH3["bias-detector"]
-        CH4["reproducibility-checker"]
+
+    subgraph Swarm["Swarm variants (2)"]
+        W1["swarm-researcher"]
+        W2["swarm-verifier"]
     end
-    
-    subgraph Builders["Builders"]
-        B1["synthesizer"]
-        B2["writer"]
-        B3["verifier"]
-        B4["reviewer"]
-    end
-    
-    Personas --> Councils
-    Personas --> Challengers
-    Councils --> Builders
-    Challengers --> Builders
 ```
 
-| Role | Agents | What they do |
-|---|---|---|
-| **Core 4** | researcher, writer, reviewer, verifier | The backbone — gather, write, critique, verify |
-| **Swarm infra** | synthesizer, coordinator, scout, debate-agent | Orchestrate, compress, and stress-test swarm outputs |
-| **Domain specialists** | 195 agents | Narrow expertise — specific fields, methods, statistical techniques, historical context |
-| **Councils** | consensus-mapper, debate-agent (triangulator/synthesis/temporal), meta-analysis-specialist | Find where agents agree, map the shape of disagreement |
-| **Challengers** | red-team, debate-agent (contrarian/methodology critic), bias-detector, reproducibility-checker | Attack consensus, find blind spots, flag unreproducible claims |
+- **Infra (9)**: `coordinator`, `scout`, `researcher`, `synthesizer`, `writer`, `verifier`, `reviewer`, `debate-agent`, `red-team`
+- **Specialists (13)**: `statistics`, `transformer`, `nlp`, `cv`, `rl`, `robotics`, `optimization`, `compiler`, `security`, `genomics`, `climate-science`, `ecology`, `sociology`
+- **Council / challenger (4)**: `consensus-mapper`, `bias-detector`, `reproducibility-checker`, `meta-analysis-specialist`
+- **Swarm variants (2)**: `swarm-researcher`, `swarm-verifier`
 
-The 195 domain specialists are dispatched automatically based on what the scout identifies. You never pick agents — the swarm assembles itself.
+The scout picks which specialists go into the persona pool for a given
+question. You never pick agents — the swarm assembles itself.
+
+### Scaling past 28 agents
+
+Zenith ships 28 distinct **agent files**. Each persona instance in a run is
+a parameterization of one of them — a `{specialist × lens × stance}`
+triple. That's why "30 personas" is realistic with only 13 specialist
+files: the scout can instantiate the same specialist multiple times with
+different lenses (empiricist / theorist / critic / practitioner / historian
+/ methodologist) and stances (advocate / skeptic / neutral / contrarian).
 
 ---
 
-## Code-enforced guarantees
+## Code-enforced gates
 
-These aren't suggestions in a system prompt. They're gates in the code that prevent the pipeline from proceeding if conditions aren't met.
+These are tools the model *must* call. The pipeline will not advance past
+the next phase if the gate rejects.
 
-| Gate | What it enforces |
+| Gate | Enforces |
 |---|---|
-| `log_agent_spawn` | Tracks every agent spawned against a budget. No silent runaway. |
-| `phase_gate` | Phases run in strict order: scout → swarm → cross-exam → verify → build → quality. No skipping. |
-| `deliver_artifact` | Final output must pass quality checks before being written to `~/research/`. Failures loop back. |
+| `log_agent_spawn` | Budget: every spawned persona counts. No silent runaway. |
+| `phase_gate` | Phase ordering: scout → round 1 → round 2 → synth → verify → review → deliver. |
+| `deliver_artifact` | Final quality threshold before anything lands in `~/research/`. |
 
 ---
 
 ## Output
 
-**What you see:** `~/research/<slug>.md` — a clean, cited research report.
-
-**What's hidden:** `~/.zenith/swarm-work/` — all the raw agent outputs, council deliberations, challenger attacks, and intermediate drafts. Useful for debugging or deep-diving into how the swarm reached its conclusions, but you never need to look at it.
-
 ```
 ~/research/
-└── scaling-laws.md              ← your report
+└── scaling-laws-tool-agents.md          ← the report
 
 ~/.zenith/swarm-work/
-└── scaling-laws/
-    ├── scout-landscape.json     ← what the scout found
-    ├── personas/                ← individual agent outputs
-    ├── councils/                ← consensus maps
-    ├── challengers/             ← attack logs
-    ├── build-chain/             ← synthesis drafts
-    └── quality-gate.json        ← pass/fail + scores
+└── scaling-laws-tool-agents/
+    ├── scout-landscape.json             ← scout output
+    ├── manifest.md                      ← what the plan was
+    ├── evidence.jsonl                   ← every assertion + reaction
+    ├── memory/
+    │   └── <persona-id>.jsonl           ← per-persona memory
+    ├── batches/
+    │   └── msgbatch_<id>.json           ← batch mode only
+    └── quality-gate.json                ← pass/fail + scores
 ```
 
 ---
 
-## Skills
+## CLI reference
 
-Seven slash commands. That's it.
+```bash
+zenith setup                           # guided wizard
+zenith doctor                          # diagnose config, auth, runtime
+zenith status                          # current setup summary
 
-| Skill | What it does |
-|---|---|
-| `/deepresearch` | Full 300–500 agent expensive-tier swarm |
-| `/swarm` | Broad-tier 100–200 agent swarm (also the default for bare questions) |
-| `/export` | Export session as BibTeX, CSV, or JSON |
-| `/eli5` | Plain-language explanation of complex research |
-| `/session-search` | Search across past research sessions |
-| `/session-log` | Browse session history and artifacts |
-| `/preview` | Browser/PDF preview of generated artifacts |
+zenith "your question"                 # default: /orchestrate
+zenith --direct "your question"        # single-agent answer
+zenith --batched "your question"       # route into batch mode
+zenith --prompt "..."                  # one-shot, no REPL
+
+zenith batch list                      # list tracked batches
+zenith batch status <batchId>          # local + live status
+zenith batch collect <batchId>         # ingest results into evidence + memory
+
+zenith sync -- --force                 # re-sync bundled agents/skills/themes
+zenith model list                      # show the pinned model
+```
+
+Slash commands inside the REPL: `/orchestrate`, `/swarm`, `/deepresearch`,
+`/export`, `/eli5`, `/session-search`, `/session-log`, `/preview`, `/help`.
 
 ---
 
 ## Configuration
 
-```bash
-zenith setup              # guided wizard — provider, auth, defaults
-zenith doctor             # diagnose config issues
-zenith --model <id> "q"   # override model for a single query
-zenith --direct "q"       # skip the swarm, single-agent answer
-zenith sync -- --force    # clean re-sync of agents, skills, themes
-```
+The single-model policy is enforced in `.zenith/settings.json`,
+`~/.zenith/agent/settings.json`, `src/model/catalog.ts::SINGLE_MODEL_SPEC`,
+and by stripping the `ANTHROPIC_MODEL`, `ANTHROPIC_MAX_TOKENS`,
+`ANTHROPIC_SMALL_FAST_MODEL`, and `CLAUDE_MODEL` env vars before spawning
+Pi (`src/pi/runtime.ts::PI_ENV_BLOCKLIST`). Changing the model is a
+repo-level decision, not a per-run flag.
 
-**Model providers:** 20+ out of the box — Anthropic, OpenAI, Google, OpenRouter, and others. Auth via OAuth or API key during setup.
-
-**Prompts:** Three built-in — `orchestrate` (default routing), `swarm` (broad-tier dispatch), `deepresearch` (expensive-tier dispatch).
-
-**Theme:** Sky-blue TUI. Everything lives in `~/.zenith/`.
+Rate-limit tier (for sync mode) is read from `ANTHROPIC_TIER` and picks a
+token-bucket + concurrency profile. Tiers 1–4 supported; concurrency capped
+at 8 to avoid 429 storms regardless of tier. See
+`extensions/research-tools/rate-limit-queue.ts`.
 
 ---
 
@@ -203,12 +245,13 @@ git clone https://github.com/pkmdev-sec/zenith.git
 cd zenith
 nvm use || nvm install
 npm install
-npm test
+npm test             # 134 passing
 npm run typecheck
+npm run lint         # prompts linter
 npm run build
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
