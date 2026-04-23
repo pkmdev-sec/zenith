@@ -10,6 +10,13 @@ import {
 	ZENITH_AGENT_LOGO,
 	ZENITH_VERSION,
 } from "./shared.js";
+import {
+	AURORA_MIN_WIDTH,
+	AURORA_ROWS,
+	auroraEnabled,
+	getActiveSwarmSnapshot,
+	renderAurora,
+} from "./aurora-header.js";
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -173,7 +180,42 @@ export function installZenithHeader(
 	return cache.agentSummaryPromise.then((agentData) => {
 		const agentCount = agentData.agents.length + agentData.chains.length;
 
-		ctx.ui.setHeader((_tui, theme) => ({
+		// Animation state shared between render() and the invalidation timer.
+		// start = high-res epoch when the header first mounted; t = seconds since.
+		const start = Date.now();
+		let snapshotCache: ReturnType<typeof getActiveSwarmSnapshot> = null;
+		let snapshotUpdatedAt = 0;
+		let tickHandle: NodeJS.Timeout | null = null;
+
+		// Capture the TUI handle the factory gives us so our tick timer can
+		// request re-renders. Stored in a closure var.
+		let tuiRef: any = null;
+		let componentRef: { invalidate(): void } | null = null;
+
+		ctx.ui.setHeader((tui, theme) => {
+			tuiRef = tui;
+			// Start the tick loop on first setHeader installation. pi-coding-agent
+			// calls the factory once per session; we keep one timer for its lifetime
+			// and clean up in dispose().
+			if (tickHandle === null && auroraEnabled()) {
+				tickHandle = setInterval(() => {
+					// Invalidate the component (clears its own cache) and ask the
+					// TUI to redraw. requestRender() is a no-op if no region needs
+					// a repaint, so this is cheap when nothing changed.
+					try {
+						if (componentRef) componentRef.invalidate();
+						if (tuiRef && typeof tuiRef.requestRender === "function") {
+							tuiRef.requestRender();
+						}
+					} catch {
+						/* tui may have gone away */
+					}
+				}, 200); // 5 FPS — gentle for a CLI
+				// Don't hold the event loop open just for the animation.
+				if (typeof tickHandle.unref === "function") tickHandle.unref();
+			}
+
+			const component = {
 			render(width: number): string[] {
 				const pad = "  ";
 				const contentW = Math.max(width - 4, 20);
@@ -181,6 +223,20 @@ export function installZenithHeader(
 
 				const push = (line: string) => { lines.push(line); };
 				const blank = () => { push(""); };
+
+				// ── Live aurora (only if TTY + wide enough + not opted out) ──
+				if (auroraEnabled() && width >= AURORA_MIN_WIDTH) {
+					// Refresh swarm snapshot at most every 1s (cheap but not per-frame).
+					const nowMs = Date.now();
+					if (nowMs - snapshotUpdatedAt > 1000) {
+						snapshotCache = getActiveSwarmSnapshot();
+						snapshotUpdatedAt = nowMs;
+					}
+					const t = (nowMs - start) / 1000;
+					const auroraLines = renderAurora({ width, t, snapshot: snapshotCache });
+					for (const l of auroraLines) push(l);
+					blank();
+				}
 
 				// ── Logo: left-aligned with 2-space indent ──
 				blank();
@@ -265,7 +321,23 @@ export function installZenithHeader(
 
 				return lines;
 			},
-			invalidate() {},
-		}));
+			invalidate() {
+				// Captured so the tick timer can request re-renders without
+				// knowing about the Component instance.
+				// (pi-coding-agent's TUI calls invalidate() itself too; this
+				// wiring just gives the timer a handle.)
+			},
+			dispose() {
+				if (tickHandle) {
+					clearInterval(tickHandle);
+					tickHandle = null;
+				}
+				tuiRef = null;
+				componentRef = null;
+			},
+			};
+			componentRef = component;
+			return component;
+		});
 	});
 }
