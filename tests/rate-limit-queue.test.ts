@@ -120,3 +120,63 @@ describe("RateLimitedQueue — behavior", () => {
 		await Promise.all([p1, p2, p3]);
 	});
 });
+
+// ── buildDispatchPlan tests ───────────────────────────────────
+
+import { buildDispatchPlan } from "../extensions/research-tools/rate-limit-queue.js";
+
+describe("buildDispatchPlan", () => {
+	it("tier-1 with 10 personas → wave of 4, not yet over the escalation threshold", () => {
+		const prev = process.env.ANTHROPIC_TIER;
+		process.env.ANTHROPIC_TIER = "1";
+		try {
+			const plan = buildDispatchPlan(10);
+			assert.equal(plan.tier, "Tier 1");
+			assert.equal(plan.waveSize, 4);
+			assert.equal(plan.switchToBatch, false);
+			assert.match(plan.recommendation, /waves of 4/);
+		} finally {
+			if (prev === undefined) delete process.env.ANTHROPIC_TIER; else process.env.ANTHROPIC_TIER = prev;
+		}
+	});
+
+	it("tier-1 with 30 personas → recommends batch mode (low tier)", () => {
+		const prev = process.env.ANTHROPIC_TIER;
+		process.env.ANTHROPIC_TIER = "1";
+		try {
+			const plan = buildDispatchPlan(30);
+			assert.equal(plan.switchToBatch, true);
+			assert.match(plan.recommendation, /batch mode/);
+		} finally {
+			if (prev === undefined) delete process.env.ANTHROPIC_TIER; else process.env.ANTHROPIC_TIER = prev;
+		}
+	});
+
+	it("tier-3 with 100 personas → recommends batch mode (high volume)", () => {
+		const prev = process.env.ANTHROPIC_TIER;
+		process.env.ANTHROPIC_TIER = "3";
+		try {
+			const plan = buildDispatchPlan(100);
+			assert.equal(plan.switchToBatch, true);
+		} finally {
+			if (prev === undefined) delete process.env.ANTHROPIC_TIER; else process.env.ANTHROPIC_TIER = prev;
+		}
+	});
+
+	it("tier override takes precedence over env", () => {
+		const prev = process.env.ANTHROPIC_TIER;
+		process.env.ANTHROPIC_TIER = "1";
+		try {
+			const plan = buildDispatchPlan(10, 4);
+			assert.equal(plan.tier, "Tier 4");
+		} finally {
+			if (prev === undefined) delete process.env.ANTHROPIC_TIER; else process.env.ANTHROPIC_TIER = prev;
+		}
+	});
+
+	it("wave count matches personaCount / waveSize (ceil)", () => {
+		const plan = buildDispatchPlan(17, 4);
+		assert.equal(plan.waveSize, 8);
+		assert.equal(plan.waves, Math.ceil(17 / 8));
+	});
+});

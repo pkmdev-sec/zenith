@@ -23,6 +23,9 @@
  * downstream SDK backoff compounds. 8 is a safe ceiling.
  */
 
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+
 // ── Tier config ───────────────────────────────────────────────
 
 export interface TierConfig {
@@ -190,4 +193,85 @@ export class RateLimitedQueue {
 			}, Math.max(10, msUntilToken));
 		}
 	}
+}
+
+// ── CLI tool: plan_persona_dispatch ──────────────────────────
+//
+// Exposes the tier-derived dispatch plan to the model so /orchestrate can
+// actually respect rate limits rather than claiming it does. Given a
+// persona count (and optionally a tier override), returns the recommended
+// wave size, estimated minutes of wall clock, and a warning if the run
+// would blow past the tier's per-minute budget.
+//
+// The model calls this once before fan-out and dispatches personas in
+// waves of `waveSize`, waiting ~60s between waves for the RPM bucket to
+// refill.
+
+
+export interface DispatchPlan {
+	tier: string;
+	rpmBudget: number;
+	maxConcurrent: number;
+	personaCount: number;
+	waveSize: number;
+	waves: number;
+	estimatedMinutes: number;
+	recommendation: string;
+	switchToBatch: boolean;
+}
+
+export function buildDispatchPlan(personaCount: number, tierOverride?: number): DispatchPlan {
+	const tier = tierOverride && TIERS[tierOverride] ? TIERS[tierOverride]! : detectTier();
+	const rpmBudget = effectiveRpm(tier);
+	const waveSize = Math.min(tier.maxConcurrent, personaCount);
+	// Each persona = ~1 request (round 1) + ~1 (round 2). Count both rounds.
+	const roundCalls = personaCount * 2;
+	const estimatedMinutes = Math.ceil(roundCalls / rpmBudget);
+	const waves = Math.ceil(personaCount / Math.max(1, waveSize));
+
+	const switchToBatch = personaCount > 50 || (tier.name === "Tier 1" && personaCount > 20);
+	const recommendation = switchToBatch
+		? `Consider batch mode: ${personaCount} personas × 2 rounds = ~${roundCalls} calls; on ${tier.name} that's ~${estimatedMinutes}min of wall clock and risks 429s. \`run_swarm executionMode: "batch"\` gets the same result for 50% less, no rate-limit exposure.`
+		: `OK on ${tier.name}: dispatch personas in waves of ${waveSize}, wait ~60s between waves for RPM refill.`;
+
+	return {
+		tier: tier.name,
+		rpmBudget,
+		maxConcurrent: tier.maxConcurrent,
+		personaCount,
+		waveSize,
+		waves,
+		estimatedMinutes,
+		recommendation,
+		switchToBatch,
+	};
+}
+
+export function registerRateLimitTools(pi: ExtensionAPI): void {
+	pi.registerTool({
+		name: "plan_persona_dispatch",
+		label: "Plan Persona Dispatch",
+		description: "Given a persona count, return the tier-aware wave size and pacing plan for sync mode — or the recommendation to switch to batch mode if the call volume would exceed the Anthropic tier budget.",
+		parameters: Type.Object({
+			personaCount: Type.Number({ minimum: 1, description: "Number of personas the /orchestrate plan will spawn per round." }),
+			tier: Type.Optional(Type.Number({ minimum: 1, maximum: 4, description: "Override tier (1–4). Default: from ANTHROPIC_TIER env var, or 1 if unset." })),
+		}),
+		execute: async (_id, params) => {
+			const plan = buildDispatchPlan(
+				params.personaCount as number,
+				params.tier as number | undefined,
+			);
+			const summary = [
+				`Tier: ${plan.tier} (RPM budget: ${plan.rpmBudget}, max concurrent: ${plan.maxConcurrent})`,
+				`Personas: ${plan.personaCount} in waves of ${plan.waveSize} × ${plan.waves} wave${plan.waves === 1 ? "" : "s"}`,
+				`Wall-clock estimate: ~${plan.estimatedMinutes} min (2 rounds)`,
+				``,
+				plan.recommendation,
+			].join("\n");
+			return {
+				content: [{ type: "text", text: summary }],
+				details: plan as unknown as Record<string, unknown>,
+			};
+		},
+	});
 }

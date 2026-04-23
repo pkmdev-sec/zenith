@@ -9,6 +9,7 @@ import { installZenithHeader } from "./research-tools/header.js";
 import { registerHelpCommand } from "./research-tools/help.js";
 import { registerGateEnforcement } from "./research-tools/gate-enforcement.js";
 import { registerOrchestrationTools } from "./research-tools/orchestration.js";
+import { registerRateLimitTools } from "./research-tools/rate-limit-queue.js";
 import { registerPipelineTools } from "./research-tools/pipeline.js";
 import { registerInitCommand, registerOutputsCommand } from "./research-tools/project.js";
 import { registerSemanticScholarTools } from "./research-tools/semantic-scholar.js";
@@ -32,6 +33,7 @@ export default function researchTools(pi: ExtensionAPI): void {
 	registerPipelineTools(pi);
 	registerMemoryTools(pi);
 	registerEvidenceGraphTools(pi);
+	registerRateLimitTools(pi);
 	registerGateEnforcement(pi);
 	registerHelpCommand(pi);
 	registerInitCommand(pi);

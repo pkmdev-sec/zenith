@@ -95,7 +95,7 @@ At least one claim with at least one source. No exceptions.
 3. After the persona returns: `mark_agent_complete(slug, agentId, tokens)` or `mark_agent_failed` on error.
 
 **Execution mode handling:**
-- `sync`: batch the spawns through Pi's `subagent` tool; the rate-limit queue inside Zenith gates concurrency. Wait for all to finish.
+- `sync`: before dispatching, call `plan_persona_dispatch(personaCount=<N>)` — it returns the tier-aware wave size and warns if the plan will overrun the tier's per-minute budget (in which case: restart in batch mode). Then batch the spawns through Pi's `subagent` tool in waves of that size, waiting ~60s between waves for the RPM bucket to refill. Wait for each wave to finish before kicking off the next.
 - `batch`: instead of spawning subagents, compose the persona prompts, submit them together as one Anthropic batch (`POST /v1/messages/batches`), persist the batch id to the swarm dir, and return the batch id to the user. They'll check back with `zenith batch status <id>` and `zenith batch collect <id>`.
 
 After all round-1 personas return, call `phase_gate(slug, nextPhase="debate")` to advance.

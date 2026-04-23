@@ -108,9 +108,12 @@ Minimum personas per run is **10** — a gate enforced in `run_swarm`.
 
 ## Agent roster (28 agents)
 
-Every agent file lives in `.zenith/agents/*.md`. Each specialist carries the
-same "Swarm protocol (MiroFish-style, 3 rounds)" block in its system prompt
-so it knows how to read and write the evidence graph and its memory.
+Every agent file lives in `.zenith/agents/*.md`. The 13 domain
+specialists and 4 council/challenger files carry the same "Swarm protocol
+(MiroFish-style, 3 rounds)" block in their system prompts — that's how
+they know how to read and write the evidence graph and their memory.
+Infra agents (scout, synthesizer, writer, verifier, reviewer, …) have
+their own role-specific prompts and operate on the graph from the outside.
 
 ```mermaid
 graph TD

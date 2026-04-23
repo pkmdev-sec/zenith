@@ -18,10 +18,16 @@ there is no selection to make.
 
 ## Agent inventory (28 total)
 
-All 28 agent files have the same "Swarm protocol (MiroFish-style, 3 rounds)"
-block in their system prompt. Each knows how to read and write the evidence
-graph (`append_evidence`, `query_evidence_graph`) and its own memory
-(`append_persona_memory`, `read_persona_memory`).
+17 of the 28 agent files carry the same "Swarm protocol (MiroFish-style,
+3 rounds)" block: all 13 domain specialists and all 4 council/challenger
+files. Each persona instance — statistics-specialist-01,
+statistics-specialist-02, … — runs that protocol over the shared evidence
+graph (`append_evidence`, `query_evidence_graph`) and its own memory file
+(`append_persona_memory`, `read_persona_memory`). The other 11 agents
+(coordinator, scout, researcher, synthesizer, writer, verifier, reviewer,
+debate-agent, red-team, swarm-researcher, swarm-verifier) have their own
+role-specific prompts and operate on the graph from outside the round
+loop.
 
 ### Swarm infrastructure (9)
 
