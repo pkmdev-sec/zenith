@@ -3,6 +3,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerAlphaTools } from "./research-tools/alpha.js";
 import { registerExportTools } from "./research-tools/export.js";
 import { registerHallucinationGuard } from "./research-tools/hallucination-guard.js";
+import { registerEvidenceGraphTools } from "./research-tools/evidence-graph.js";
+import { registerMemoryTools } from "./research-tools/memory.js";
 import { installZenithHeader } from "./research-tools/header.js";
 import { registerHelpCommand } from "./research-tools/help.js";
 import { registerGateEnforcement } from "./research-tools/gate-enforcement.js";
@@ -28,6 +30,8 @@ export default function researchTools(pi: ExtensionAPI): void {
 	registerExportTools(pi);
 	registerOrchestrationTools(pi);
 	registerPipelineTools(pi);
+	registerMemoryTools(pi);
+	registerEvidenceGraphTools(pi);
 	registerGateEnforcement(pi);
 	registerHelpCommand(pi);
 	registerInitCommand(pi);
