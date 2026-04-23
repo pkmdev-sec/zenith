@@ -1,81 +1,84 @@
 {
-  "name": "zenith-agent",
-  "version": "0.2.14",
-  "description": "Research-first CLI agent built on Pi and alphaXiv",
-  "license": "MIT",
-  "type": "module",
-  "engines": {
-    "node": ">=20.19.0"
-  },
-  "bin": {
-    "zenith": "bin/zenith.js"
-  },
-  "files": [
-    "bin/",
-    "dist/",
-    "metadata/",
-    ".zenith/agents/",
-    ".zenith/runtime-workspace.tgz",
-    ".zenith/settings.json",
-    ".zenith/SYSTEM.md",
-    ".zenith/themes/",
-    "extensions/",
-    "prompts/",
-    "logo.mjs",
-    "logo.d.mts",
-    "scripts/",
-    "skills/",
-    "AGENTS.md",
-    "CONTRIBUTING.md",
-    "README.md",
-    ".env.example"
-  ],
-  "scripts": {
-    "preinstall": "node ./scripts/check-node-version.mjs",
-    "build": "tsc -p tsconfig.build.json",
-    "build:native-bundle": "node ./scripts/build-native-bundle.mjs",
-    "dev": "tsx src/index.ts",
-    "prepack": "npm run build && node ./scripts/prepare-runtime-workspace.mjs",
-    "start": "tsx src/index.ts",
-    "start:dist": "node ./bin/zenith.js",
-    "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "keywords": [
-    "pi-package",
-    "research-agent",
-    "literature-review",
-    "experiments"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions"
-    ],
-    "prompts": [
-      "./prompts"
-    ],
-    "skills": [
-      "./skills"
-    ]
-  },
-  "dependencies": {
-    "@companion-ai/alpha-hub": "^0.1.2",
-    "@mariozechner/pi-ai": "0.62.0",
-    "@mariozechner/pi-coding-agent": "0.62.0",
-    "@sinclair/typebox": "^0.34.48",
-    "dotenv": "^17.3.1"
-  },
-  "devDependencies": {
-    "@types/node": "^25.5.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/pkmdev-sec/zenith.git"
-  },
-  "homepage": "https://github.com/pkmdev-sec/zenith#readme",
-  "bugs": {
-    "url": "https://github.com/pkmdev-sec/zenith/issues"
-  }
+	"name": "zenith-agent",
+	"version": "0.2.14",
+	"description": "Research-first CLI agent built on Pi and alphaXiv",
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": ">=20.19.0"
+	},
+	"bin": {
+		"zenith": "bin/zenith.js"
+	},
+	"files": [
+		"bin/",
+		"assets/",
+		"dist/",
+		"metadata/",
+		".zenith/agents/",
+		".zenith/runtime-workspace.tgz",
+		".zenith/settings.json",
+		".zenith/SYSTEM.md",
+		".zenith/themes/",
+		"extensions/",
+		"prompts/",
+		"logo.mjs",
+		"logo.d.mts",
+		"scripts/",
+		"skills/",
+		"AGENTS.md",
+		"CONTRIBUTING.md",
+		"README.md",
+		".env.example"
+	],
+	"scripts": {
+		"preinstall": "node ./scripts/check-node-version.mjs",
+		"build": "tsc -p tsconfig.build.json",
+		"build:native-bundle": "node ./scripts/build-native-bundle.mjs",
+		"dev": "tsx src/index.ts",
+		"prepack": "npm run build && node ./scripts/prepare-runtime-workspace.mjs",
+		"start": "tsx src/index.ts",
+		"start:dist": "node ./bin/zenith.js",
+		"test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+		"typecheck": "tsc --noEmit",
+		"lint:prompts": "node ./scripts/lint-prompts.mjs",
+		"lint": "npm run typecheck && npm run lint:prompts"
+	},
+	"keywords": [
+		"pi-package",
+		"research-agent",
+		"literature-review",
+		"experiments"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions"
+		],
+		"prompts": [
+			"./prompts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"dependencies": {
+		"@companion-ai/alpha-hub": "^0.1.2",
+		"@mariozechner/pi-ai": "0.62.0",
+		"@mariozechner/pi-coding-agent": "0.62.0",
+		"@sinclair/typebox": "^0.34.48",
+		"dotenv": "^17.3.1"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0",
+		"tsx": "^4.21.0",
+		"typescript": "^5.9.3"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/pkmdev-sec/zenith.git"
+	},
+	"homepage": "https://github.com/pkmdev-sec/zenith#readme",
+	"bugs": {
+		"url": "https://github.com/pkmdev-sec/zenith/issues"
+	}
 }
