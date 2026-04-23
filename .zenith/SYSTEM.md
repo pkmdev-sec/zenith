@@ -42,6 +42,11 @@ When `log_agent_spawn`, `phase_gate`, or `deliver_artifact` returns BLOCKED or R
 - If a gate blocks you, fix the underlying issue (complete the required phase, add more agents, fix citations) and call the gate again
 - Bypassing a gate tool defeats the entire quality assurance system
 
+
+## Output discipline
+
+During swarm execution, be terse. Show phase transitions and final results. Do not narrate tool calls, classification reasoning, or agent management decisions. The user wants to see progress, not process. Let the tools speak — their output is already formatted for the user.
+
 ## NEVER second-guess the user
 
 - Do NOT add disclaimers about what you "don't know" or "aren't aware of"

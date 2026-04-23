@@ -214,8 +214,13 @@ describe("phase_gate enforcement", () => {
 
 		// Try to advance to debate
 		const r = await callTool(tools, "phase_gate", { slug: "test-threshold", nextPhase: "debate" });
-		assert.equal(r.details.approved, false, `should block at 40% completion, got: ${r.content[0].text}`);
-		assert.ok(String(r.content[0].text).includes("40%") || String(r.content[0].text).includes("complete"), `expected threshold message, got ${r.content[0].text}`);
+		assert.equal(r.details.approved, false, `should block at 40% completion, got: ${JSON.stringify(r.details)}`);
+		// After the UX polish, phase_gate blocks render silently to the user —
+		// the threshold message moved into details.reason / details.directive.
+		assert.ok(
+			String(r.details.reason).includes("40%") || String(r.details.directive).includes("60%"),
+			`expected threshold breakdown in details, got ${JSON.stringify(r.details)}`,
+		);
 
 		// Complete 4 more (80% ≥ 60%) — should unblock
 		for (let i = 4; i < 8; i++) {

@@ -409,10 +409,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					confidence: 0.99,
 				};
 				return {
-					content: [{
-						type: "text",
-						text: `Explicit workflow: /${workflow}. Routed directly — no swarm needed.`,
-					}],
+					content: [{ type: "text", text: "" }],
 					details: classification,
 				};
 			}
@@ -441,10 +438,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 						confidence: 0.85,
 					};
 					return {
-						content: [{
-							type: "text",
-							text: `Trivial lookup detected (${wordCount} words, simple question). Direct answer recommended.`,
-						}],
+						content: [{ type: "text", text: "" }],
 						details: classification,
 					};
 				}
@@ -463,13 +457,8 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				confidence,
 			};
 
-			const lines = [`Research intent detected (confidence: ${confidence.toFixed(2)})`];
-			if (taskType) lines.push(`Task type: ${taskType}`);
-			if (domains.length > 0) lines.push(`Matched domains: ${domains.join(", ")}`);
-			if (confidence < 0.7) lines.push(`Low confidence — escalate to LLM Tier 2 for disambiguation.`);
-
 			return {
-				content: [{ type: "text", text: lines.join("\n") }],
+				content: [{ type: "text", text: "◆ Research detected — launching swarm" }],
 				details: classification,
 			};
 		},
@@ -601,7 +590,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				: "[no agents tracked]";
 
 			const lines = [
-				`# Swarm Status: ${params.slug}`,
+				`◆ Swarm: ${params.slug}`,
 				``,
 				`**Phase:** ${phase}`,
 				`**Progress:** ${progressBar}`,
@@ -759,42 +748,23 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				paths[subdir] = resolve(swarmDir, subdir);
 			}
 
-			// ── Build phase summary for output ──
-			const phaseSummary = params.phases.map((p, i) =>
-				`  ${i + 1}. ${p.name} (${p.agents.length} agent${p.agents.length === 1 ? "" : "s"}): ${p.agents.join(", ")}`,
-			);
-
-			const lines = [
-				`# Swarm Prepared: ${safeSlug}`,
-				``,
-				`**Directory:** ${swarmDir}`,
-				`**Manifest:** ${manifestPath}`,
-				`**Event log:** ${eventsPath}`,
-				``,
-				`## Budget`,
-				`  Tokens: ${limits.maxTokens.toLocaleString()}`,
-				`  Agents: ${limits.maxAgents}`,
-				`  Wall clock: ${limits.maxWallClockMs > 0 ? `${(limits.maxWallClockMs / 1000).toFixed(0)}s` : "unlimited"}`,
-				``,
-				`## Phases (${params.phases.length})`,
-				...phaseSummary,
-				``,
-				`## Agent total: ${totalAgents}`,
-				``,
-				`## Subdirectories`,
-				...SWARM_SUBDIRS.map((d) => `  ${d}/`),
-				``,
-				`Ready for agent dispatch. Log events to: ${eventsPath}`,
-			];
-
+			const phaseNames = params.phases.map(p => p.name).join(" → ");
+			const tokenLabel = limits.maxTokens >= 1_000_000
+				? `${(limits.maxTokens / 1_000_000).toFixed(1)}M`
+				: `${Math.round(limits.maxTokens / 1000)}K`;
+			const userText2 = `◆ Swarm initialized: ${safeSlug}\n  Budget: ${tokenLabel} tokens · ${limits.maxAgents} agents\n  Phases: ${phaseNames}`;
 			return {
-				content: [{ type: "text", text: lines.join("\n") }],
+				// User-visible content: keep the upstream 3-line polish.
+				content: [{ type: "text", text: userText2 }],
+				// Model-visible details: preserve the richer payload downstream tools
+				// read (slug, totalAgents, manifest path).
 				details: {
 					slug: safeSlug,
 					paths,
 					budget: tracker,
 					totalAgents,
 					phases: params.phases,
+					manifest: manifestPath,
 				} as Record<string, unknown>,
 			};
 		},
@@ -830,20 +800,30 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			if (spawned >= effectiveMax) {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "budget_exceeded", reason: "agent_limit", spawned, limit: effectiveMax, blocked: params.agentId });
 				return {
-					content: [{ type: "text", text: `BUDGET_EXCEEDED: Agent limit reached (${spawned}/${effectiveMax}). Do NOT spawn more agents. Proceed to synthesis with available results.` }],
-					details: { approved: false, spawned, limit: effectiveMax },
+					content: [{ type: "text", text: `⚠ Agent limit reached (${spawned}/${effectiveMax}). Proceeding to synthesis.` }],
+					details: { approved: false, spawned, limit: effectiveMax, directive: "Do NOT spawn more agents. Proceed to synthesis with available results." } as Record<string, unknown>,
 				};
 			}
 
 			// Resolve current phase: prefer explicit param, else derive from last phase_transition.
+			// Upstream added the ▸ milestone-only user text; HEAD added `phase` to the
+			// event itself so phase_gate completion ratios work. Keep both.
 			const phaseEvents = events.filter(e => e.type === "phase_transition" || e.type === "phase_start");
 			const lastPhase = phaseEvents.length > 0 ? String(phaseEvents[phaseEvents.length - 1]!.phase ?? "scout") : "scout";
 			const phase = params.phase ?? lastPhase;
 
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_spawn", agent: params.agentName, id: params.agentId, phase });
+			const newCount = spawned + 1;
+			const isMilestone = newCount % 25 === 0;
+			const isFinal = newCount >= effectiveMax;
+			const userText = isFinal
+				? `▸ ${newCount}/${effectiveMax} — research swarm complete`
+				: isMilestone
+					? `▸ ${newCount}/${effectiveMax} agents deployed`
+					: "";
 			return {
-				content: [{ type: "text", text: `APPROVED: Agent ${spawned + 1} of ${effectiveMax} (${params.agentName}:${params.agentId})` }],
-				details: { approved: true, spawned: spawned + 1, limit: effectiveMax },
+				content: [{ type: "text", text: userText }],
+				details: { approved: true, spawned: newCount, limit: effectiveMax, agent: params.agentName, id: params.agentId } as Record<string, unknown>,
 			};
 		},
 	});
@@ -966,12 +946,13 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const nextIdx = PHASE_ORDER.indexOf(nextPhase);
 
 			if (nextIdx === -1) {
-				return { content: [{ type: "text", text: `BLOCKED: Unknown phase '${params.nextPhase}'. Valid phases: ${PHASE_ORDER.join(", ")}` }], details: { approved: false } as Record<string, unknown> };
+				// Silent for the user (upstream UX polish); the model reads `reason`/`directive` from details.
+				return { content: [{ type: "text", text: "" }], details: { approved: false, reason: `Unknown phase '${params.nextPhase}'`, directive: `Valid phases: ${PHASE_ORDER.join(", ")}` } as Record<string, unknown> };
 			}
 
 			if (nextIdx > currentIdx + 1) {
 				const skipped = PHASE_ORDER.slice(currentIdx + 1, nextIdx).join(", ");
-				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${nextPhase}'.` }], details: { approved: false } as Record<string, unknown> };
+				return { content: [{ type: "text", text: "" }], details: { approved: false, reason: `Cannot skip phases`, directive: `Complete '${skipped}' before advancing to '${params.nextPhase}'.` } as Record<string, unknown> };
 			}
 
 			// Threshold check: does the current phase have enough completed agents?
@@ -990,12 +971,44 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				const completionRate = phaseAgents > 0 ? agentsFinished / phaseAgents : 1.0;
 
 				if (completionRate < threshold) {
-					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish, or emit a phase_complete event for '${currentPhase}'.` }], details: { approved: false, completionRate, threshold, phaseAgents, agentsFinished } as Record<string, unknown> };
+					return {
+						// Silent for user; model reads reason + directive from details.
+						content: [{ type: "text", text: "" }],
+						details: {
+							approved: false,
+							completionRate,
+							threshold,
+							phaseAgents,
+							agentsFinished,
+							reason: `Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete`,
+							directive: `Need ${Math.round(threshold * 100)}%. Wait for more agents to finish, or emit a phase_complete event for '${currentPhase}'.`,
+						} as Record<string, unknown>,
+					};
 				}
 			}
 
+			// Use the alias-resolved `nextPhase` local (HEAD) for the event + transition
+			// target so aliases land on the canonical phase name. Render upstream's
+			// clean ── phase ──── divider as the user-visible content.
 			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "phase_transition", from: currentPhase, phase: nextPhase });
-			return { content: [{ type: "text", text: `APPROVED: Advancing to phase '${nextPhase}' (${currentPhase} was ${currentPhase === "none" ? "initial" : explicitlyComplete ? "explicitly complete" : "ready"})` }], details: { approved: true, from: currentPhase, to: nextPhase } as Record<string, unknown> };
+			const PHASE_DESCRIPTIONS: Record<string, string> = {
+				scout: "Mapping the research landscape...",
+				research: "Deploying research agents...",
+				debate: "Cross-examining research outputs...",
+				verify: "Verifying citations and claims...",
+				build: "Synthesizing → drafting → verifying → reviewing...",
+			};
+			const desc = PHASE_DESCRIPTIONS[nextPhase] ?? "";
+			const divider = `\n── ${nextPhase} ────────────────────\n  ${desc}`;
+			return {
+				content: [{ type: "text", text: divider }],
+				details: {
+					approved: true,
+					from: currentPhase,
+					to: nextPhase,
+					explicitlyComplete,
+				} as Record<string, unknown>,
+			};
 		},
 	});
 
@@ -1068,8 +1081,14 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					reason: "citation-structure",
 				});
 				return {
-					content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:\n${issueList}\n\nRun verify_citations and fix, then call deliver_artifact again.` }],
-					details: { delivered: false, issues } as Record<string, unknown>,
+					// User-visible: upstream's short ⚠ one-liner.
+					// Model-visible: list of issues + directive so the agent knows what to fix.
+					content: [{ type: "text", text: `⚠ Quality gate: ${issues.length} issue${issues.length === 1 ? "" : "s"} found. Fixing...` }],
+					details: {
+						delivered: false,
+						issues,
+						directive: `Fix these issues:\n${issueList}\n\nRun verify_citations and call deliver_artifact again.`,
+					} as Record<string, unknown>,
 				};
 			}
 
@@ -1129,17 +1148,16 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				verifyEvent: verifyPassedEvent,
 			}));
 
-			const deliveredMsg = rotatedPath
-				? `DELIVERED: Research saved to ~/research/${baseName}\nPrevious version rotated to ${rotatedPath}\nWorking data at ${swarmDir}\nQuality gate: ${qualityGatePath}`
-				: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}\nQuality gate: ${qualityGatePath}`;
-
+			// Upstream UX: single-line ✓ user-visible message. The model reads
+			// rotatedPath / qualityGatePath / researchPath / swarmDir from details.
 			return {
-				content: [{ type: "text", text: deliveredMsg }],
+				content: [{ type: "text", text: `✓ Research complete → ~/research/${baseName}` }],
 				details: {
 					delivered: true,
+					path: destPath,
+					researchPath: destPath,
 					citations: citedNumbers.size,
 					sources: sourceNumbers.size,
-					researchPath: destPath,
 					rotatedPath,
 					swarmDir,
 					qualityGatePath,
