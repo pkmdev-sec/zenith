@@ -5,6 +5,7 @@ import { registerExportTools } from "./research-tools/export.js";
 import { registerHallucinationGuard } from "./research-tools/hallucination-guard.js";
 import { installZenithHeader } from "./research-tools/header.js";
 import { registerHelpCommand } from "./research-tools/help.js";
+import { registerGateEnforcement } from "./research-tools/gate-enforcement.js";
 import { registerOrchestrationTools } from "./research-tools/orchestration.js";
 import { registerPipelineTools } from "./research-tools/pipeline.js";
 import { registerInitCommand, registerOutputsCommand } from "./research-tools/project.js";
@@ -27,6 +28,7 @@ export default function researchTools(pi: ExtensionAPI): void {
 	registerExportTools(pi);
 	registerOrchestrationTools(pi);
 	registerPipelineTools(pi);
+	registerGateEnforcement(pi);
 	registerHelpCommand(pi);
 	registerInitCommand(pi);
 	registerOutputsCommand(pi);
