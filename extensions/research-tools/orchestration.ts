@@ -25,6 +25,8 @@ import {
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
+import { readEvidenceGraph, disputedClaimIds, type EvidenceEntry } from "./evidence-graph.js";
+
 // ── Types ──────────────────────────────────────────────
 
 interface IntentClassification {
@@ -1057,9 +1059,46 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			if (issues.length > 0) {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues });
 				const issueList = issues.map(i => `  - ${i}`).join("\n");
+				writeQualityGate(swarmDir, {
+					slug: params.slug,
+					delivered: false,
+					blockedAt: new Date().toISOString(),
+					artifactPath: params.artifactPath,
+					blocks: issues,
+					reason: "citation-structure",
+				});
 				return {
 					content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:\n${issueList}\n\nRun verify_citations and fix, then call deliver_artifact again.` }],
 					details: { delivered: false, issues } as Record<string, unknown>,
+				};
+			}
+
+			// Second gate: require that verify_citations actually ran (and passed)
+			// for this slug at least once. The in-process structural check above
+			// is a necessary but not sufficient condition — it cannot tell broken
+			// URLs, and that's the single biggest quality regression we've seen
+			// (see the autogenesis-protocol-agp post-mortem).
+			const priorEvents = readEvents(eventsPath);
+			const verifyPassedEvent = priorEvents.find((e) => e.type === "verify_citations_passed");
+			if (!verifyPassedEvent) {
+				const reason =
+					`DELIVERY_BLOCKED: No verify_citations_passed event in ${eventsPath}.\n\n` +
+					`The swarm must run verify_citations with slug="${params.slug}" before deliver_artifact will publish. ` +
+					`Call:\n\n  verify_citations(filePath="${params.artifactPath}", slug="${params.slug}")\n\n` +
+					`then re-call deliver_artifact. The structural check passed — this block is specifically ` +
+					`about the URL-liveness + orphan-citation checks that only verify_citations performs.`;
+				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues: ["verify_citations has not passed for this slug"] });
+				writeQualityGate(swarmDir, {
+					slug: params.slug,
+					delivered: false,
+					blockedAt: new Date().toISOString(),
+					artifactPath: params.artifactPath,
+					blocks: ["verify_citations has not passed for this slug"],
+					reason: "verify-missing",
+				});
+				return {
+					content: [{ type: "text", text: reason }],
+					details: { delivered: false, issues: ["verify_citations missing"] } as Record<string, unknown>,
 				};
 			}
 
@@ -1081,11 +1120,164 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			}
 			copyFileSync(fullPath, destPath);
 
-			const deliveredMsg = rotatedPath
-				? `DELIVERED: Research saved to ~/research/${baseName}\nPrevious version rotated to ${rotatedPath}\nWorking data at ${swarmDir}`
-				: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}`;
+			const qualityGatePath = writeQualityGate(swarmDir, buildQualityGate({
+				slug: params.slug,
+				artifactPath: params.artifactPath,
+				researchPath: destPath,
+				citedNumbers,
+				sourceNumbers,
+				verifyEvent: verifyPassedEvent,
+			}));
 
-			return { content: [{ type: "text", text: deliveredMsg }], details: { delivered: true, citations: citedNumbers.size, sources: sourceNumbers.size, researchPath: destPath, rotatedPath, swarmDir } as Record<string, unknown> };
+			const deliveredMsg = rotatedPath
+				? `DELIVERED: Research saved to ~/research/${baseName}\nPrevious version rotated to ${rotatedPath}\nWorking data at ${swarmDir}\nQuality gate: ${qualityGatePath}`
+				: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}\nQuality gate: ${qualityGatePath}`;
+
+			return {
+				content: [{ type: "text", text: deliveredMsg }],
+				details: {
+					delivered: true,
+					citations: citedNumbers.size,
+					sources: sourceNumbers.size,
+					researchPath: destPath,
+					rotatedPath,
+					swarmDir,
+					qualityGatePath,
+				} as Record<string, unknown>,
+			};
 		},
 	});
+}
+
+// ── quality-gate.json helpers ───────────────────────────────────────
+//
+// The delivery receipt. The model + human auditor should both be able to
+// read one JSON and know exactly what was checked and what wasn't. This
+// is the structured sibling of the `delivered` event; events.jsonl is the
+// narrow append-only timeline, quality-gate.json is the single-file
+// snapshot that answers "how good was this run?" at a glance.
+
+interface QualityGateDelivered {
+	slug: string;
+	delivered: true;
+	deliveredAt: string;
+	artifactPath: string;
+	researchPath: string;
+	citations: {
+		inline: number;
+		sources: number;
+		orphanInline: number;
+		orphanSources: number;
+	};
+	verifyCitations: {
+		passedAt: string;
+		artifact: string;
+		urlsChecked: number;
+		urlsLive: number;
+		minorIssues: number;
+	};
+	evidenceGraph: {
+		totalClaims: number;
+		round1Assertions: number;
+		round2: { support: number; contradict: number; qualify: number; total: number };
+		disputedClaimIds: string[];
+		pushback: {
+			contradictPerFive: number;
+			minimumExpected: number;
+			warn: boolean;
+		};
+	};
+	warnings: string[];
+}
+
+interface QualityGateBlocked {
+	slug: string;
+	delivered: false;
+	blockedAt: string;
+	artifactPath: string;
+	blocks: string[];
+	reason: "citation-structure" | "verify-missing";
+}
+
+type QualityGate = QualityGateDelivered | QualityGateBlocked;
+
+function writeQualityGate(swarmDir: string, gate: QualityGate): string {
+	const path = resolve(swarmDir, "quality-gate.json");
+	writeFileSync(path, JSON.stringify(gate, null, 2) + "\n", "utf-8");
+	return path;
+}
+
+function buildQualityGate(input: {
+	slug: string;
+	artifactPath: string;
+	researchPath: string;
+	citedNumbers: Set<number>;
+	sourceNumbers: Set<number>;
+	verifyEvent: SwarmEvent;
+}): QualityGateDelivered {
+	const { slug, artifactPath, researchPath, citedNumbers, sourceNumbers, verifyEvent } = input;
+
+	const evidence = readEvidenceGraph(slug);
+	const round1 = evidence.filter((e) => e.round === 1);
+	const round2 = evidence.filter((e) => e.round === 2);
+	const round2ByKind = {
+		support: round2.filter((e: EvidenceEntry) => e.kind === "support").length,
+		contradict: round2.filter((e: EvidenceEntry) => e.kind === "contradict").length,
+		qualify: round2.filter((e: EvidenceEntry) => e.kind === "qualify").length,
+		total: round2.length,
+	};
+	const round1AssertionCount = round1.filter((e: EvidenceEntry) => e.kind === "assertion").length;
+
+	// Soft guard: expect at least 1 contradict per 5 round-1 assertions. This
+	// is a heuristic, not a block — a genuinely convergent consensus with
+	// zero contradicts is legitimate, but it's the kind of thing a human
+	// auditor should see at a glance.
+	const minimumExpected = Math.floor(round1AssertionCount / 5);
+	const pushbackWarn = minimumExpected > 0 && round2ByKind.contradict < minimumExpected;
+
+	const warnings: string[] = [];
+	if (pushbackWarn) {
+		warnings.push(
+			`Round-2 cross-examination looks shallow: ${round2ByKind.contradict} contradict edge${round2ByKind.contradict === 1 ? "" : "s"} across ${round1AssertionCount} round-1 assertions. Expected at least ${minimumExpected} (1 per 5). If this is genuine consensus, note it in the artifact; otherwise the challengers did not push back enough.`,
+		);
+	}
+	if (round1AssertionCount === 0) {
+		warnings.push("No round-1 assertions in the evidence graph — either this was a single-round run, or personas never called append_evidence.");
+	}
+
+	const asNumber = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+	const asString = (v: unknown): string => (typeof v === "string" ? v : "");
+
+	return {
+		slug,
+		delivered: true,
+		deliveredAt: new Date().toISOString(),
+		artifactPath,
+		researchPath,
+		citations: {
+			inline: citedNumbers.size,
+			sources: sourceNumbers.size,
+			orphanInline: [...citedNumbers].filter((n) => !sourceNumbers.has(n)).length,
+			orphanSources: [...sourceNumbers].filter((n) => !citedNumbers.has(n)).length,
+		},
+		verifyCitations: {
+			passedAt: asString(verifyEvent.ts),
+			artifact: asString(verifyEvent.artifact),
+			urlsChecked: asNumber(verifyEvent.urlsChecked),
+			urlsLive: asNumber(verifyEvent.urlsLive),
+			minorIssues: asNumber(verifyEvent.minorIssues),
+		},
+		evidenceGraph: {
+			totalClaims: evidence.length,
+			round1Assertions: round1AssertionCount,
+			round2: round2ByKind,
+			disputedClaimIds: disputedClaimIds(slug),
+			pushback: {
+				contradictPerFive: round1AssertionCount === 0 ? 0 : Math.round((round2ByKind.contradict / round1AssertionCount) * 5 * 100) / 100,
+				minimumExpected,
+				warn: pushbackWarn,
+			},
+		},
+		warnings,
+	};
 }

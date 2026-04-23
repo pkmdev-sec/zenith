@@ -131,6 +131,8 @@ Focus on disputed claims first: query_evidence_graph(slug, disputedOnly=true).
 }
 ```
 
+**Minimum pushback gate (round 2):** challenger personas (`red-team`, `bias-detector`, `reproducibility-checker`, `debate-agent`) must collectively produce at least **1 `contradict` edge per 5 round-1 assertions** (floor division, so 10 assertions → 2 contradicts). If reviewers genuinely find no contradictable claim after honestly trying, they MUST instead append a `qualify` edge with claim text beginning `"no contradictable claim found after review:"` and their reasoning. Silent consensus is not acceptable — the evidence graph must record that challengers actually tried. This is surfaced in `quality-gate.json` under `evidenceGraph.pushback`.
+
 After round 2, call `phase_gate(slug, nextPhase="build")`.
 `save_checkpoint` stage='debate'.
 
@@ -177,7 +179,7 @@ Write to <swarmDir>/build/<slug>-draft.md.
 
 ## Phase 5 — Verify
 
-Spawn `verifier` on the draft — it adds inline [N] citations, checks URLs via `verify_citations`, builds the Sources section. Writes `<swarmDir>/build/<slug>-cited.md`.
+Spawn `verifier` on the draft — it adds inline [N] citations, checks URLs via `verify_citations(filePath, slug="${slug}")`, builds the Sources section. Writes `<swarmDir>/build/<slug>-cited.md`. The `slug` argument is required: without it `deliver_artifact` will block on the verify-receipt gate.
 
 ## Phase 6 — Review
 
@@ -185,7 +187,7 @@ Spawn `reviewer` on the cited draft. Flags unsupported claims, logical gaps, sin
 
 ## Phase 7 — Deliver
 
-1. `verify_citations` on `<slug>-cited.md` — fix any FATAL/MAJOR issues
+1. `verify_citations(filePath=<slug>-cited.md, slug="${slug}")` — fix any FATAL/MAJOR issues. The `slug` is mandatory; it records a `verify_citations_passed` event that `deliver_artifact` checks for.
 2. `validate_output` with workflowType="deepresearch"
 3. `export_bibtex` for .bib companion
 4. `export_json` for structured downstream use

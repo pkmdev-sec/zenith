@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -63,6 +63,25 @@ afterEach(() => {
 
 function getSwarmDir(slug: string): string {
 	return resolve(zenithHome, "swarm-work", slug);
+}
+
+function appendVerifyCitationsPassed(slug: string, artifactPath: string): void {
+	// Simulate a prior verify_citations PASS run for this slug without
+	// actually making HTTP calls. Lets the happy-path deliver tests exercise
+	// the verify-receipt gate without pulling in the hallucination-guard
+	// URL-checker.
+	const eventsPath = resolve(getSwarmDir(slug), "events.jsonl");
+	const event = {
+		ts: new Date().toISOString(),
+		type: "verify_citations_passed",
+		artifact: artifactPath,
+		inlineCitations: 2,
+		sources: 2,
+		urlsChecked: 2,
+		urlsLive: 2,
+		minorIssues: 0,
+	};
+	appendFileSync(eventsPath, JSON.stringify(event) + "\n", "utf-8");
 }
 
 async function initSwarm(tools: Record<string, AnyTool>, slug: string, opts: { budget?: string; agents?: number; phases?: string[] } = {}) {
@@ -233,6 +252,7 @@ describe("deliver_artifact", () => {
 		const researchHome = resolve(zenithHome, "research");
 		process.env.HOME = zenithHome;
 
+		appendVerifyCitationsPassed("test-deliver-rotate", a);
 		const r1 = await callTool(tools, "deliver_artifact", { slug: "test-deliver-rotate", artifactPath: a });
 		assert.equal(r1.details.delivered, true, `first delivery should succeed, got: ${r1.content[0].text}`);
 		const delivered1 = readFileSync(resolve(researchHome, "test-deliver-rotate.md"), "utf8");
@@ -241,6 +261,7 @@ describe("deliver_artifact", () => {
 		// Deliver a v2
 		const b = resolve(swarmDir, "build", "v2.md");
 		writeFileSync(b, goodArtifact("V2"));
+		appendVerifyCitationsPassed("test-deliver-rotate", b);
 		const r2 = await callTool(tools, "deliver_artifact", { slug: "test-deliver-rotate", artifactPath: b });
 		assert.equal(r2.details.delivered, true, `second delivery should succeed, got: ${r2.content[0].text}`);
 		const delivered2 = readFileSync(resolve(researchHome, "test-deliver-rotate.md"), "utf8");
@@ -251,6 +272,109 @@ describe("deliver_artifact", () => {
 		const allFiles = readdirSync(researchHome);
 		const rotated = allFiles.filter(f => f.startsWith("test-deliver-rotate") && f.endsWith(".md") && f !== "test-deliver-rotate.md");
 		assert.ok(rotated.length >= 1, `expected rotated file, got: ${allFiles.join(", ")}`);
+	});
+	it("blocks when verify_citations has not been called for this slug", async () => {
+		const { tools } = makeMockPi();
+		await initSwarm(tools, "test-deliver-no-verify", { agents: 100 });
+		const swarmDir = getSwarmDir("test-deliver-no-verify");
+		mkdirSync(resolve(swarmDir, "build"), { recursive: true });
+		const artifact = resolve(swarmDir, "build", "final.md");
+		writeFileSync(artifact, goodArtifact("X"));
+		process.env.HOME = zenithHome;
+
+		// Note: no appendVerifyCitationsPassed call here.
+		const r = await callTool(tools, "deliver_artifact", { slug: "test-deliver-no-verify", artifactPath: artifact });
+		assert.equal(r.details.delivered, false, `expected block, got: ${r.content[0].text}`);
+		assert.match(r.content[0].text, /verify_citations/);
+		assert.match(r.content[0].text, /DELIVERY_BLOCKED/);
+
+		// Artifact should NOT have been copied to ~/research/
+		const researchPath = resolve(zenithHome, "research", "test-deliver-no-verify.md");
+		assert.equal(existsSync(researchPath), false, "should not publish when verify receipt is missing");
+
+		// quality-gate.json should record the block with reason=verify-missing.
+		const gatePath = resolve(swarmDir, "quality-gate.json");
+		assert.ok(existsSync(gatePath), "quality-gate.json should be written on block");
+		const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+		assert.equal(gate.delivered, false);
+		assert.equal(gate.reason, "verify-missing");
+	});
+
+	it("writes quality-gate.json with evidence-graph stats on success", async () => {
+		const { tools } = makeMockPi();
+		await initSwarm(tools, "test-deliver-gate", { agents: 100 });
+		const swarmDir = getSwarmDir("test-deliver-gate");
+		mkdirSync(resolve(swarmDir, "build"), { recursive: true });
+		const artifact = resolve(swarmDir, "build", "final.md");
+		writeFileSync(artifact, goodArtifact("Q"));
+		process.env.HOME = zenithHome;
+
+		// Simulate an evidence graph: 5 round-1 assertions across 5 personas,
+		// with one contradict + one qualify in round 2. That hits the floor of
+		// 1 contradict per 5 assertions (5/5=1), so no pushback warning.
+		const evPath = resolve(swarmDir, "evidence.jsonl");
+		const entries = [
+			{ id: "c_1", ts: "t", round: 1, persona: "p1", claim: "x", sources: [], kind: "assertion" },
+			{ id: "c_2", ts: "t", round: 1, persona: "p2", claim: "x", sources: [], kind: "assertion" },
+			{ id: "c_3", ts: "t", round: 1, persona: "p3", claim: "x", sources: [], kind: "assertion" },
+			{ id: "c_4", ts: "t", round: 1, persona: "p4", claim: "x", sources: [], kind: "assertion" },
+			{ id: "c_5", ts: "t", round: 1, persona: "p5", claim: "x", sources: [], kind: "assertion" },
+			{ id: "c_6", ts: "t", round: 2, persona: "p6", claim: "x", sources: [], kind: "contradict", targetClaimId: "c_1" },
+			{ id: "c_7", ts: "t", round: 2, persona: "p7", claim: "x", sources: [], kind: "qualify", targetClaimId: "c_2" },
+		];
+		writeFileSync(evPath, entries.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf-8");
+
+		appendVerifyCitationsPassed("test-deliver-gate", artifact);
+		const r = await callTool(tools, "deliver_artifact", { slug: "test-deliver-gate", artifactPath: artifact });
+		assert.equal(r.details.delivered, true, `expected success, got: ${r.content[0].text}`);
+
+		const gatePath = resolve(swarmDir, "quality-gate.json");
+		assert.ok(existsSync(gatePath));
+		const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+		assert.equal(gate.delivered, true);
+		assert.equal(gate.slug, "test-deliver-gate");
+		assert.equal(gate.citations.inline, 2);
+		assert.equal(gate.citations.sources, 2);
+		assert.equal(gate.evidenceGraph.totalClaims, 7);
+		assert.equal(gate.evidenceGraph.round1Assertions, 5);
+		assert.equal(gate.evidenceGraph.round2.contradict, 1);
+		assert.equal(gate.evidenceGraph.round2.qualify, 1);
+		assert.equal(gate.evidenceGraph.pushback.minimumExpected, 1);
+		assert.equal(gate.evidenceGraph.pushback.warn, false);
+		assert.equal(gate.warnings.length, 0);
+		assert.equal(typeof gate.verifyCitations.passedAt, "string");
+		assert.equal(gate.verifyCitations.urlsChecked, 2);
+	});
+
+	it("quality-gate warns when round-2 pushback is too thin", async () => {
+		const { tools } = makeMockPi();
+		await initSwarm(tools, "test-deliver-shallow", { agents: 100 });
+		const swarmDir = getSwarmDir("test-deliver-shallow");
+		mkdirSync(resolve(swarmDir, "build"), { recursive: true });
+		const artifact = resolve(swarmDir, "build", "final.md");
+		writeFileSync(artifact, goodArtifact("S"));
+		process.env.HOME = zenithHome;
+
+		// 10 round-1 assertions, 0 round-2 contradicts — mirrors the
+		// autogenesis-protocol-agp run we post-mortemed.
+		const evPath = resolve(swarmDir, "evidence.jsonl");
+		const entries = Array.from({ length: 10 }, (_, i) => ({
+			id: `c_${i + 1}`, ts: "t", round: 1, persona: `p${i + 1}`,
+			claim: "x", sources: [], kind: "assertion" as const,
+		}));
+		writeFileSync(evPath, entries.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf-8");
+
+		appendVerifyCitationsPassed("test-deliver-shallow", artifact);
+		const r = await callTool(tools, "deliver_artifact", { slug: "test-deliver-shallow", artifactPath: artifact });
+		assert.equal(r.details.delivered, true);
+
+		const gate = JSON.parse(readFileSync(resolve(swarmDir, "quality-gate.json"), "utf8"));
+		assert.equal(gate.evidenceGraph.round1Assertions, 10);
+		assert.equal(gate.evidenceGraph.round2.contradict, 0);
+		assert.equal(gate.evidenceGraph.pushback.minimumExpected, 2);
+		assert.equal(gate.evidenceGraph.pushback.warn, true);
+		assert.equal(gate.warnings.length >= 1, true);
+		assert.match(gate.warnings[0], /shallow/);
 	});
 });
 

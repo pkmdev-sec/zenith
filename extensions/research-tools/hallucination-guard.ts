@@ -14,7 +14,40 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { readFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
+
+// ── Swarm receipt helpers ──────────────────────────────
+//
+// verify_citations can optionally receive a `slug`, in which case a PASS
+// verdict is recorded into the swarm's events.jsonl as a
+// `verify_citations_passed` event. That event is what `deliver_artifact`
+// uses to tell "citation verifier actually ran" apart from "model just
+// called deliver_artifact directly". The resolver mirrors orchestration.ts
+// rather than importing from it: hallucination-guard must remain usable
+// out-of-band (human auditors re-running the tool after the fact).
+
+function hgZenithHome(): string {
+	if (process.env.ZENITH_HOME) return process.env.ZENITH_HOME;
+	const home = process.env.HOME ?? homedir();
+	return resolve(home, ".zenith");
+}
+
+function hgSwarmDir(slug: string): string {
+	return resolve(hgZenithHome(), "swarm-work", slug);
+}
+
+function hgSwarmEventsPath(slug: string): string {
+	return resolve(hgSwarmDir(slug), "events.jsonl");
+}
+
+function hgAppendSwarmEvent(slug: string, event: Record<string, unknown>): void {
+	// Only append when the swarm dir already exists — this prevents stray
+	// calls of verify_citations(slug="typo") from creating orphan state.
+	if (!existsSync(hgSwarmDir(slug))) return;
+	appendFileSync(hgSwarmEventsPath(slug), JSON.stringify(event) + "\n", "utf-8");
+}
 
 // ── Types ──────────────────────────────────────────────
 
@@ -173,9 +206,12 @@ export function registerHallucinationGuard(pi: ExtensionAPI): void {
 			checkUrls: Type.Optional(
 				Type.Boolean({ description: "Fetch each URL to verify it resolves. Default: true" }),
 			),
+			slug: Type.Optional(
+				Type.String({ description: "Swarm slug. When provided and the verdict is PASS (0 fatal, 0 major), a `verify_citations_passed` event is appended to the swarm\'s events.jsonl. `deliver_artifact` requires that event to exist for the same slug." }),
+			),
 		}),
 		async execute(_id, params) {
-			const { filePath, checkUrls = true } = params;
+			const { filePath, checkUrls = true, slug } = params as { filePath: string; checkUrls?: boolean; slug?: string };
 
 			if (!existsSync(filePath)) {
 				return {
@@ -315,7 +351,24 @@ export function registerHallucinationGuard(pi: ExtensionAPI): void {
 			}
 
 			const text = lines.join("\n");
-			return { content: [{ type: "text", text }], details: { issues, urlResults, inlineCites, sources } };
+
+			// Emit the swarm receipt: a PASS verdict (no fatal + no major issues)
+			// gates deliver_artifact for this slug. We intentionally do NOT emit
+			// on WARN/FAIL — deliver_artifact should keep blocking those runs.
+			if (slug && fatals.length === 0 && majors.length === 0) {
+				hgAppendSwarmEvent(slug, {
+					ts: new Date().toISOString(),
+					type: "verify_citations_passed",
+					artifact: filePath,
+					inlineCitations: inlineCites.length,
+					sources: sources.length,
+					urlsChecked,
+					urlsLive,
+					minorIssues: minors.length,
+				});
+			}
+
+			return { content: [{ type: "text", text }], details: { issues, urlResults, inlineCites, sources, slug, verdict: fatals.length > 0 ? "FAIL" : majors.length > 0 ? "WARN" : "PASS" } };
 		},
 	});
 

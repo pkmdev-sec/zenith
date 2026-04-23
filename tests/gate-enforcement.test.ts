@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -36,6 +36,23 @@ async function fireToolCall(handlers: Record<string, Handler[]>, event: any): Pr
 		if (r) results.push(r);
 	}
 	return results;
+}
+
+function appendVerifyCitationsPassed(swarmDir: string, artifactPath: string): void {
+	// Simulate a prior verify_citations(filePath, slug) PASS run by appending the
+	// receipt event directly — avoids making real HTTP calls in this gate test.
+	const eventsPath = resolve(swarmDir, "events.jsonl");
+	const event = {
+		ts: new Date().toISOString(),
+		type: "verify_citations_passed",
+		artifact: artifactPath,
+		inlineCitations: 2,
+		sources: 2,
+		urlsChecked: 2,
+		urlsLive: 2,
+		minorIssues: 0,
+	};
+	appendFileSync(eventsPath, JSON.stringify(event) + "\n", "utf-8");
 }
 
 let zhome: string;
@@ -96,6 +113,7 @@ describe("gate-enforcement: delivery gate", () => {
 		writeFileSync(artifact,
 			"# Report\n\nClaim [1] and another [2].\n\n## Sources\n\n1. First at https://example.com/a\n2. Second at https://example.com/b\n\n" +
 			"x".repeat(500));
+		appendVerifyCitationsPassed(swarmDir, artifact);
 
 		const dres = await callTool(tools, "deliver_artifact", { slug: "approved-slug", artifactPath: artifact });
 		assert.equal(dres.details.delivered, true, `deliver_artifact should succeed, got: ${dres.content[0].text}`);

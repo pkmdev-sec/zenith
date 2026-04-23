@@ -149,3 +149,92 @@ w
 		assert.equal(r.details.wfType, "compare");
 	});
 });
+
+// ── verify_citations slug-emission (swarm receipt contract) ──
+
+import { existsSync as fsExists, mkdirSync as fsMkdir, readFileSync as fsReadFile } from "node:fs";
+
+describe("verify_citations — swarm receipt emission", () => {
+	let savedHome: string | undefined;
+	let savedZhome: string | undefined;
+	beforeEach(() => {
+		savedHome = process.env.HOME;
+		savedZhome = process.env.ZENITH_HOME;
+		process.env.HOME = workdir;
+		process.env.ZENITH_HOME = workdir;
+	});
+	afterEach(() => {
+		if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+		if (savedZhome === undefined) delete process.env.ZENITH_HOME; else process.env.ZENITH_HOME = savedZhome;
+	});
+
+	function swarmDir(slug: string): string {
+		return resolve(workdir, "swarm-work", slug);
+	}
+
+	it("emits verify_citations_passed to events.jsonl on PASS + slug", async () => {
+		const tools = loadTools();
+		const slug = "receipt-pass";
+		fsMkdir(swarmDir(slug), { recursive: true });
+		const artifact = writeMd(`# R\n\nClaim [1].\n\n## Sources\n\n1. First at https://example.com/a\n`);
+
+		const r = await tools["verify_citations"].execute(
+			"t",
+			{ filePath: artifact, checkUrls: false, slug },
+			undefined, undefined, {} as any,
+		);
+		assert.match(r.content[0].text, /PASS/);
+
+		const eventsPath = resolve(swarmDir(slug), "events.jsonl");
+		assert.ok(fsExists(eventsPath), "events.jsonl should exist");
+		const lines = fsReadFile(eventsPath, "utf-8").trim().split("\n").filter(Boolean);
+		assert.equal(lines.length, 1);
+		const ev = JSON.parse(lines[0]);
+		assert.equal(ev.type, "verify_citations_passed");
+		assert.equal(ev.inlineCitations, 1);
+		assert.equal(ev.sources, 1);
+	});
+
+	it("does NOT emit the event when slug is omitted (backwards compat)", async () => {
+		const tools = loadTools();
+		const slug = "receipt-no-slug";
+		fsMkdir(swarmDir(slug), { recursive: true });
+		const artifact = writeMd(`# R\n\nClaim [1].\n\n## Sources\n\n1. First at https://example.com/a\n`);
+
+		const r = await tools["verify_citations"].execute(
+			"t", { filePath: artifact, checkUrls: false },
+			undefined, undefined, {} as any,
+		);
+		assert.match(r.content[0].text, /PASS/);
+		assert.equal(fsExists(resolve(swarmDir(slug), "events.jsonl")), false);
+	});
+
+	it("does NOT emit the event on FAIL verdict even with slug", async () => {
+		const tools = loadTools();
+		const slug = "receipt-fail";
+		fsMkdir(swarmDir(slug), { recursive: true });
+		// Orphan inline citation → fatal issue → FAIL verdict.
+		const artifact = writeMd(`# R\n\nClaim [1] and [9].\n\n## Sources\n\n1. First at https://example.com/a\n`);
+
+		const r = await tools["verify_citations"].execute(
+			"t", { filePath: artifact, checkUrls: false, slug },
+			undefined, undefined, {} as any,
+		);
+		assert.match(r.content[0].text, /FAIL/);
+		assert.equal(fsExists(resolve(swarmDir(slug), "events.jsonl")), false);
+	});
+
+	it("silently skips emission when the swarm dir does not exist", async () => {
+		const tools = loadTools();
+		// No mkdir here — swarm dir does not exist.
+		const artifact = writeMd(`# R\n\nClaim [1].\n\n## Sources\n\n1. First at https://example.com/a\n`);
+
+		const r = await tools["verify_citations"].execute(
+			"t", { filePath: artifact, checkUrls: false, slug: "ghost-slug" },
+			undefined, undefined, {} as any,
+		);
+		assert.match(r.content[0].text, /PASS/);
+		assert.equal(fsExists(resolve(workdir, "swarm-work", "ghost-slug")), false);
+	});
+});
+

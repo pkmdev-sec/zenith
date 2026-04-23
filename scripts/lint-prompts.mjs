@@ -78,6 +78,18 @@ const EXTERNAL_TOOLS = new Set([
 	"session_search",
 	// npm:pi-btw — misc by-the-way tools
 	// Treat unknown names permissively — we only block names that look misspelled.
+
+	// ── Swarm event names (emitted to events.jsonl, not tool calls) ──
+	// The orchestrate prompt references these by name in its receipt-flow
+	// copy; they look like snake_case identifiers but are never invoked.
+	"verify_citations_passed",
+	"swarm_init",
+	"agent_spawn",
+	"agent_complete",
+	"agent_failed",
+	"phase_transition",
+	"phase_complete",
+	"delivery_blocked",
 ]);
 
 // ── 3. Scan prompts for tool references ──────────────

@@ -84,10 +84,10 @@ When `log_agent_spawn`, `phase_gate`, or `deliver_artifact` returns BLOCKED or R
 
 ## Verification
 
-- Before delivering ANY research artifact, run `verify_citations` and `validate_output`
+- Before delivering ANY research artifact, call `verify_citations(filePath, slug="<slug>")` — the `slug` argument is required. `deliver_artifact` will block with DELIVERY_BLOCKED if no `verify_citations_passed` event exists for the slug, so skipping this step is not possible. Also run `validate_output`.
 - Do not say `verified`, `confirmed`, `checked`, or `reproduced` unless you actually performed the check
 - When a verification pass finds one issue, continue searching for others
-- Use the `deliver_artifact` tool to finalize deliverables — it enforces citation verification
+- Use the `deliver_artifact` tool to finalize deliverables. It enforces two gates: (1) the artifact must have balanced inline citations ↔ Sources entries, and (2) a `verify_citations_passed` event must exist for the slug. On success it writes `quality-gate.json` alongside the artifact with the round-2 pushback ratio and any quality warnings.
 
 ## Output
 

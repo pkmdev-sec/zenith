@@ -77,12 +77,38 @@ graph across multiple rounds.
 - `src/ui/terminal.ts` owns the ASCII banner directly; `tests/logo.test.ts`
   keeps it locked to `logo.mjs`.
 
+### Delivery gates (verify receipt + quality-gate.json)
+
+Post-mortem of the autogenesis-protocol-agp run revealed that
+`deliver_artifact` was publishing reports without `verify_citations` ever
+running during the swarm — the only checks that fired were the in-process
+structural ones, which cannot detect broken URLs. Tightening:
+
+- `verify_citations` now accepts an optional `slug`. When provided with a
+  PASS verdict, it appends a `verify_citations_passed` event to
+  `swarm-work/<slug>/events.jsonl`. The `hg*` swarm-dir resolver in
+  `extensions/research-tools/hallucination-guard.ts` intentionally skips
+  emission for non-existent swarms so out-of-band auditor invocations still
+  work.
+- `deliver_artifact` requires that event to exist for the slug before it
+  will publish. Structural check runs first (most specific failure),
+  receipt check runs second.
+- Every `deliver_artifact` call — success or block — now writes
+  `swarm-work/<slug>/quality-gate.json` with: citation counts, verify
+  metadata (urlsChecked / urlsLive / minorIssues), evidence-graph stats
+  (total claims, round-1 assertions, round-2 support/contradict/qualify),
+  disputed claim IDs, and a soft-warning list. Shallow round-2
+  cross-examination (0 contradicts across 10+ round-1 assertions) is
+  flagged as a warning, not a block: genuine consensus is legitimate, but
+  humans should see the ratio.
+- `prompts/orchestrate.md` now requires challenger personas to produce at
+  least 1 `contradict` per 5 round-1 assertions, or explicitly log
+  `qualify` edges beginning `"no contradictable claim found after review:"`
+  with reasoning. Silent consensus is not accepted by the prompt.
+
 ### Tests
 
-118 → 134 passing. Added `tests/batch-cli.test.ts` (13),
-`tests/logo.test.ts` (2), `tests/top-level-commands.test.ts` (1). Existing
-suites: memory, evidence-graph, rate-limit-queue, batch-runner, orchestration
-gates, pipeline paths, classify intent, pi settings/runtime, and more.
+118 → 149 passing. Added `tests/batch-cli.test.ts` (13), `tests/logo.test.ts` (2), `tests/top-level-commands.test.ts` (1), `tests/delivery-contract.test.ts` (3), new quality-gate + verify-emission tests in `tests/orchestration-gates.test.ts` (3) and `tests/hallucination-guard.test.ts` (4), plus `buildDispatchPlan` tests (5). Existing suites: memory, evidence-graph, rate-limit-queue, batch-runner, orchestration gates, pipeline paths, classify intent, pi settings/runtime, and more.
 
 ### Verification
 
