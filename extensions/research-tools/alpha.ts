@@ -35,7 +35,7 @@ export function registerAlphaTools(pi: ExtensionAPI): void {
 				const msg = err instanceof Error ? err.message : String(err);
 				return { content: [{ type: "text", text: `alpha_search failed: ${msg}
 
-Fallback: try scholar_search or web_search.` }] };
+Fallback: try scholar_search or web_search.` }], details: undefined };
 			}
 		},
 	});
@@ -56,7 +56,7 @@ Fallback: try scholar_search or web_search.` }] };
 				const msg = err instanceof Error ? err.message : String(err);
 				return { content: [{ type: "text", text: `alpha_get_paper failed: ${msg}
 
-Check the paper ID is a valid arXiv ID or URL.` }] };
+Check the paper ID is a valid arXiv ID or URL.` }], details: undefined };
 			}
 		},
 	});
@@ -75,7 +75,7 @@ Check the paper ID is a valid arXiv ID or URL.` }] };
 				return { content: [{ type: "text", text: formatText(result) }], details: result };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
-				return { content: [{ type: "text", text: `alpha_ask_paper failed: ${msg}` }] };
+				return { content: [{ type: "text", text: `alpha_ask_paper failed: ${msg}` }], details: undefined };
 			}
 		},
 	});
@@ -99,7 +99,7 @@ Check the paper ID is a valid arXiv ID or URL.` }] };
 				return { content: [{ type: "text", text: formatText(result) }], details: result };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
-				return { content: [{ type: "text", text: `alpha_annotate_paper failed: ${msg}` }] };
+				return { content: [{ type: "text", text: `alpha_annotate_paper failed: ${msg}` }], details: undefined };
 			}
 		},
 	});
@@ -115,7 +115,7 @@ Check the paper ID is a valid arXiv ID or URL.` }] };
 				return { content: [{ type: "text", text: formatText(result) }], details: result };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
-				return { content: [{ type: "text", text: `alpha_list_annotations failed: ${msg}` }] };
+				return { content: [{ type: "text", text: `alpha_list_annotations failed: ${msg}` }], details: undefined };
 			}
 		},
 	});
@@ -136,7 +136,7 @@ Check the paper ID is a valid arXiv ID or URL.` }] };
 				const msg = err instanceof Error ? err.message : String(err);
 				return { content: [{ type: "text", text: `alpha_read_code failed: ${msg}
 
-Check the GitHub URL is valid.` }] };
+Check the GitHub URL is valid.` }], details: undefined };
 			}
 		},
 	});

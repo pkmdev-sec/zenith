@@ -161,6 +161,7 @@ function detectSections(md: string): string[] {
 export function registerHallucinationGuard(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "verify_citations",
+		label: "Verify Citations",
 		description:
 			"Verify all citations in a research output file. Checks: " +
 			"(1) every inline [N] has a matching source entry, " +
@@ -178,7 +179,7 @@ export function registerHallucinationGuard(pi: ExtensionAPI): void {
 
 			if (!existsSync(filePath)) {
 				return {
-					content: [{ type: "text", text: `Error: File not found: ${filePath}` }],
+					content: [{ type: "text", text: `Error: File not found: ${filePath}` }], details: undefined,
 				};
 			}
 
@@ -320,6 +321,7 @@ export function registerHallucinationGuard(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "validate_output",
+		label: "Validate Output",
 		description:
 			"Validate that a research output has the required structure for its workflow type. " +
 			"Checks section presence, citation density, and structural completeness. " +
@@ -338,7 +340,7 @@ export function registerHallucinationGuard(pi: ExtensionAPI): void {
 
 			if (!existsSync(filePath)) {
 				return {
-					content: [{ type: "text", text: `Error: File not found: ${filePath}` }],
+					content: [{ type: "text", text: `Error: File not found: ${filePath}` }], details: undefined,
 				};
 			}
 

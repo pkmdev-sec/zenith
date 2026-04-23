@@ -131,6 +131,7 @@ function formatPaperBrief(p: any, index: number): string {
 export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "scholar_search",
+		label: "Scholar Search",
 		description:
 			"Search Semantic Scholar's corpus of 200M+ papers across ALL academic fields. " +
 			"Broader than arXiv-only search — covers PubMed, IEEE, ACM, Springer, Elsevier, and more. " +
@@ -173,7 +174,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 								type: "text",
 								text: `Semantic Scholar: No results for "${params.query}". Try broader terms, different spelling, or remove filters.`,
 							},
-						],
+						], details: undefined,
 					};
 				}
 
@@ -190,7 +191,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 							type: "text",
 							text: `Semantic Scholar search failed: ${err.message}\n\nFallback: try alpha_search or web_search for this query.`,
 						},
-					],
+					], details: undefined,
 				};
 			}
 		},
@@ -198,6 +199,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "scholar_paper",
+		label: "Scholar Paper",
 		description:
 			"Get detailed information about a specific paper from Semantic Scholar. " +
 			"Accepts multiple ID formats: Semantic Scholar ID, DOI (DOI:10.xxx), " +
@@ -239,7 +241,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 				return { content: [{ type: "text", text: lines.join("\n") }], details: result };
 			} catch (err: any) {
 				return {
-					content: [{ type: "text", text: `Failed to fetch paper: ${err.message}` }],
+					content: [{ type: "text", text: `Failed to fetch paper: ${err.message}` }], details: undefined,
 				};
 			}
 		},
@@ -247,6 +249,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "scholar_citations",
+		label: "Scholar Citations",
 		description:
 			"Get papers that CITE a given paper (forward citation traversal). " +
 			"Essential for understanding a paper's impact and finding follow-up work. " +
@@ -269,7 +272,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 				if (citations.length === 0) {
 					return {
-						content: [{ type: "text", text: "No citations found for this paper." }],
+						content: [{ type: "text", text: "No citations found for this paper." }], details: undefined,
 					};
 				}
 
@@ -282,7 +285,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 				return { content: [{ type: "text", text }], details: result };
 			} catch (err: any) {
 				return {
-					content: [{ type: "text", text: `Failed to fetch citations: ${err.message}` }],
+					content: [{ type: "text", text: `Failed to fetch citations: ${err.message}` }], details: undefined,
 				};
 			}
 		},
@@ -290,6 +293,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "scholar_references",
+		label: "Scholar References",
 		description:
 			"Get papers REFERENCED BY a given paper (backward citation traversal). " +
 			"Shows what foundational work a paper builds upon. " +
@@ -312,7 +316,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 				if (refs.length === 0) {
 					return {
-						content: [{ type: "text", text: "No references found for this paper." }],
+						content: [{ type: "text", text: "No references found for this paper." }], details: undefined,
 					};
 				}
 
@@ -324,7 +328,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 				return { content: [{ type: "text", text }], details: result };
 			} catch (err: any) {
 				return {
-					content: [{ type: "text", text: `Failed to fetch references: ${err.message}` }],
+					content: [{ type: "text", text: `Failed to fetch references: ${err.message}` }], details: undefined,
 				};
 			}
 		},
@@ -332,6 +336,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "scholar_author",
+		label: "Scholar Author",
 		description:
 			"Look up an author on Semantic Scholar. Returns h-index, citation count, " +
 			"affiliations, and most-cited papers. Use for assessing author expertise and finding related work.",
@@ -362,7 +367,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 									type: "text",
 									text: `No author found for "${params.query}". Try a more specific name.`,
 								},
-							],
+							], details: undefined,
 						};
 					}
 					authorId = authors[0].authorId;
@@ -402,7 +407,7 @@ export function registerSemanticScholarTools(pi: ExtensionAPI): void {
 				return { content: [{ type: "text", text: lines.join("\n") }], details: { author, papers } };
 			} catch (err: any) {
 				return {
-					content: [{ type: "text", text: `Failed to fetch author: ${err.message}` }],
+					content: [{ type: "text", text: `Failed to fetch author: ${err.message}` }], details: undefined,
 				};
 			}
 		},

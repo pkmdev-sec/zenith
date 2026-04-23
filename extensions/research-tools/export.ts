@@ -172,6 +172,7 @@ function extractSourcesForExport(md: string): ParsedSource[] {
 export function registerExportTools(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "export_bibtex",
+		label: "Export BibTeX",
 		description:
 			"Extract all sources from a research output's Sources/References section and export as BibTeX. " +
 			"Output can be imported into Zotero, Mendeley, or any citation manager.",
@@ -184,7 +185,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			if (!existsSync(params.filePath)) {
-				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }] };
+				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }], details: undefined };
 			}
 
 			const md = readFileSync(params.filePath, "utf-8");
@@ -197,7 +198,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 							type: "text",
 							text: "No Sources/References section found in the file, or it is empty.",
 						},
-					],
+					], details: undefined,
 				};
 			}
 
@@ -219,6 +220,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "export_csv",
+		label: "Export CSV",
 		description:
 			"Extract markdown tables (evidence tables, comparison matrices, etc.) from a research output and export as CSV files. " +
 			"Useful for importing into R, pandas, Excel, or any data analysis tool.",
@@ -234,7 +236,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			if (!existsSync(params.filePath)) {
-				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }] };
+				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }], details: undefined };
 			}
 
 			const md = readFileSync(params.filePath, "utf-8");
@@ -242,7 +244,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 
 			if (tables.length === 0) {
 				return {
-					content: [{ type: "text", text: "No markdown tables found in the file." }],
+					content: [{ type: "text", text: "No markdown tables found in the file." }], details: undefined,
 				};
 			}
 
@@ -273,6 +275,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "export_json",
+		label: "Export JSON",
 		description:
 			"Export a research output as structured JSON with metadata, sections, sources, and claims. " +
 			"Machine-readable format for downstream processing, dashboards, or API consumption.",
@@ -283,7 +286,7 @@ export function registerExportTools(pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			if (!existsSync(params.filePath)) {
-				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }] };
+				return { content: [{ type: "text", text: `File not found: ${params.filePath}` }], details: undefined };
 			}
 
 			const md = readFileSync(params.filePath, "utf-8");
