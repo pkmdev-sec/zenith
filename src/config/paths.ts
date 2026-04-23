@@ -26,6 +26,18 @@ export function getBootstrapStatePath(home = getZenithHome()): string {
 	return resolve(getZenithStateDir(home), "bootstrap.json");
 }
 
+export function getSwarmWorkRoot(home = getZenithHome()): string {
+	return resolve(home, "swarm-work");
+}
+
+export function getSwarmWorkDir(slug: string, home = getZenithHome()): string {
+	return resolve(getSwarmWorkRoot(home), slug);
+}
+
+export function getSwarmCheckpointDir(slug: string, home = getZenithHome()): string {
+	return resolve(getSwarmWorkDir(slug, home), "checkpoints");
+}
+
 export function ensureZenithHome(home = getZenithHome()): void {
 	for (const dir of [
 		home,

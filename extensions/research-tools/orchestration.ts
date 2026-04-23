@@ -19,8 +19,10 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 // ── Types ──────────────────────────────────────────────
@@ -77,7 +79,6 @@ interface BudgetTracker {
 	remainingTokens: number;
 	remainingAgents: number;
 	budgetPct: number;
-	wallClockPct: number;
 }
 
 // ── Constants ──────────────────────────────────────────
@@ -169,9 +170,18 @@ const DOMAIN_KEYWORDS: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────
 
+// Standardized resolver matching src/config/paths.ts::getSwarmWorkDir.
+// Source of truth: $ZENITH_HOME if set, else $HOME/.zenith (or homedir()/.zenith).
+// This helper is duplicated (rather than imported) because `extensions/` and
+// `src/` are separate compilation units; keep this mirror in sync with paths.ts.
 function getSwarmDir(_workingDir: string, slug: string): string {
-	const zenithHome = process.env.ZENITH_HOME ?? resolve(process.env.HOME ?? ".", ".zenith");
-	return resolve(zenithHome, "swarm-work", slug);
+	return resolve(getZenithHome(), "swarm-work", slug);
+}
+
+function getZenithHome(): string {
+	if (process.env.ZENITH_HOME) return process.env.ZENITH_HOME;
+	const home = process.env.HOME ?? homedir();
+	return resolve(home, ".zenith");
 }
 
 function getEventsPath(swarmDir: string): string {
@@ -347,14 +357,12 @@ function buildBudgetTracker(limits: BudgetLimits, events: SwarmEvent[]): BudgetT
 		if (typeof event.tokens === "number") {
 			tokensUsed += event.tokens;
 		}
-		if (event.type === "agent_start") {
+		if (event.type === "agent_spawn") {
 			agentsSpawned++;
 		}
 	}
 
 	const budgetPct = limits.maxTokens > 0 ? (tokensUsed / limits.maxTokens) * 100 : 0;
-	const elapsed = Date.now() - new Date(startedAt).getTime();
-	const wallClockPct = limits.maxWallClockMs > 0 ? (elapsed / limits.maxWallClockMs) * 100 : 0;
 
 	return {
 		limits,
@@ -364,7 +372,6 @@ function buildBudgetTracker(limits: BudgetLimits, events: SwarmEvent[]): BudgetT
 		remainingTokens: Math.max(0, limits.maxTokens - tokensUsed),
 		remainingAgents: Math.max(0, limits.maxAgents - agentsSpawned),
 		budgetPct: Math.round(budgetPct * 100) / 100,
-		wallClockPct: Math.round(wallClockPct * 100) / 100,
 	};
 }
 
@@ -375,6 +382,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "classify_intent",
+		label: "Classify Intent",
 		description:
 			"Heuristic intent classifier for routing user queries. Returns structured classification " +
 			"with research flag, task type, matched specialist domains, and confidence score. " +
@@ -411,7 +419,12 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const wordCount = words.length;
 			const firstWordLower = words[0]?.toLowerCase() ?? "";
 
-			if (wordCount < 15 && QUESTION_WORDS.has(firstWordLower)) {
+			// Research-style task hints mean even a short question is research, not trivial.
+			const earlyTaskType = detectTaskType(query);
+			const researchTaskTypes = new Set(["comparison", "survey", "replication", "audit", "review", "synthesis", "forecasting"]);
+			const looksLikeResearchTask = earlyTaskType !== null && researchTaskTypes.has(earlyTaskType);
+
+			if (!looksLikeResearchTask && wordCount < 15 && QUESTION_WORDS.has(firstWordLower)) {
 				// Check if it's a simple factoid question (single entity, no complex qualifiers)
 				// Heuristic: if the question has no conjunctions, comparatives, or multi-clause structure
 				const complexityMarkers = /\b(?:and|or|but|versus|vs|compared|between|relationship|affect|influence|impact|implications|why.*(?:does|do|is|are)|how.*(?:does|do|affect|change))\b/i;
@@ -463,12 +476,13 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "swarm_status",
+		label: "Swarm Status",
 		description:
 			"Read the append-only event log for a swarm and return structured status including " +
 			"phase, agent progress, token usage, budget percentage, and elapsed time.",
 
 		parameters: Type.Object({
-			slug: Type.String({ description: "Swarm slug (directory name under outputs/.swarm/)" }),
+			slug: Type.String({ description: "Swarm slug (directory under ~/.zenith/swarm-work/)" }),
 		}),
 		async execute(_id, params) {
 			const cwd = process.cwd();
@@ -480,7 +494,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					content: [{
 						type: "text",
 						text: `No swarm found for slug "${params.slug}". Directory does not exist: ${swarmDir}`,
-					}],
+					}], details: undefined,
 				};
 			}
 
@@ -508,6 +522,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			// Derive status from event stream
 			let phase = "unknown";
 			let agentsTotal = 0;
+			let agentsSpawned = 0;
 			let agentsComplete = 0;
 			let agentsFailed = 0;
 			let tokensUsed = 0;
@@ -528,7 +543,8 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					case "phase_complete":
 						// Phase is still the last started one until a new one begins
 						break;
-					case "agent_start":
+					case "agent_spawn":
+						agentsSpawned++;
 						break;
 					case "agent_complete":
 						agentsComplete++;
@@ -603,6 +619,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "run_swarm",
+		label: "Run Swarm",
 		description:
 			"Prepare the swarm orchestration infrastructure for a research query. Creates directory " +
 			"structure, writes the execution manifest, initializes the event log, and returns prepared " +
@@ -646,14 +663,14 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const totalAgents = params.phases.reduce((sum, p) => sum + p.agents.length, 0);
 
 			const MIN_AGENTS_BROAD = 100;
-			const MIN_AGENTS_EXPENSIVE = 200;
+			const MIN_AGENTS_EXPENSIVE = 300;
 			const scaleStr = typeof params.budget === "string" ? params.budget : "broad";
 			const minRequired = scaleStr === "expensive" ? MIN_AGENTS_EXPENSIVE : MIN_AGENTS_BROAD;
 
 			if (totalAgents < minRequired) {
 				return {
 					content: [{ type: "text", text: `REJECTED: Plan has only ${totalAgents} agents. Minimum for '${scaleStr}' tier is ${minRequired}. Redesign the plan with more diverse researchers — add domain specialists, different lenses (empiricist/theorist/practitioner/critic/historian/methodologist), and different stances (advocate/skeptic/neutral/contrarian). Every research request deserves thorough investigation.` }],
-					details: { rejected: true, totalAgents, minRequired, scale: scaleStr },
+					details: { rejected: true, totalAgents, minRequired, scale: scaleStr } as Record<string, unknown>,
 				};
 			}
 
@@ -740,7 +757,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 					budget: tracker,
 					totalAgents,
 					phases: params.phases,
-				},
+				} as Record<string, unknown>,
 			};
 		},
 	});
@@ -749,11 +766,13 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "log_agent_spawn",
+		label: "Log Agent Spawn",
 		description: "REQUIRED before spawning each subagent. Checks budget limits and either approves or blocks the spawn.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Swarm slug" }),
 			agentName: Type.String({ description: "Agent template name" }),
 			agentId: Type.String({ description: "Unique ID for this agent instance" }),
+			phase: Type.Optional(Type.String({ description: "Current pipeline phase (scout|research|debate|verify|build). Required for phase_gate threshold tracking." })),
 		}),
 		async execute(_id, params) {
 			const cwd = process.cwd();
@@ -763,7 +782,9 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 			const initEvent = events.find(e => e.type === "swarm_init");
 			const maxAgents = (initEvent?.maxAgents as number) ?? 200;
-			const settingsMax = parseInt(process.env.ZENITH_MAX_AGENTS ?? "", 10) || maxAgents;
+			const rawEnvMax = process.env.ZENITH_MAX_AGENTS;
+			const parsedEnvMax = rawEnvMax !== undefined && rawEnvMax !== "" ? parseInt(rawEnvMax, 10) : NaN;
+			const settingsMax = Number.isFinite(parsedEnvMax) ? parsedEnvMax : maxAgents;
 			const effectiveMax = Math.min(maxAgents, settingsMax);
 
 			const spawned = events.filter(e => e.type === "agent_spawn").length;
@@ -776,7 +797,12 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 				};
 			}
 
-			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_spawn", agent: params.agentName, id: params.agentId });
+			// Resolve current phase: prefer explicit param, else derive from last phase_transition.
+			const phaseEvents = events.filter(e => e.type === "phase_transition" || e.type === "phase_start");
+			const lastPhase = phaseEvents.length > 0 ? String(phaseEvents[phaseEvents.length - 1]!.phase ?? "scout") : "scout";
+			const phase = params.phase ?? lastPhase;
+
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_spawn", agent: params.agentName, id: params.agentId, phase });
 			return {
 				content: [{ type: "text", text: `APPROVED: Agent ${spawned + 1} of ${effectiveMax} (${params.agentName}:${params.agentId})` }],
 				details: { approved: true, spawned: spawned + 1, limit: effectiveMax },
@@ -784,71 +810,154 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 		},
 	});
 
+	// ── Tool 4b: mark_agent_complete ───────────────────
+	// Records that a previously-spawned agent finished successfully. This is the
+	// counterpart to log_agent_spawn — together they let phase_gate compute
+	// completion ratios and let swarm_status show real progress.
+
+	pi.registerTool({
+		name: "mark_agent_complete",
+		label: "Mark Agent Complete",
+		description: "Record that a spawned agent finished successfully. Pair with log_agent_spawn so phase_gate threshold checks work.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Swarm slug" }),
+			agentId: Type.String({ description: "Agent instance ID (same value passed to log_agent_spawn)" }),
+			tokens: Type.Optional(Type.Number({ description: "Token usage for budget tracking" })),
+			phase: Type.Optional(Type.String({ description: "Phase the agent ran in" })),
+		}),
+		async execute(_id, params) {
+			const cwd = process.cwd();
+			const swarmDir = getSwarmDir(cwd, params.slug);
+			const eventsPath = getEventsPath(swarmDir);
+			if (!existsSync(eventsPath)) {
+				return { content: [{ type: "text", text: `NO_SWARM: slug '${params.slug}' not initialized.` }], details: { ok: false } as Record<string, unknown> };
+			}
+			// Derive phase from the matching spawn event if not provided.
+			let phase = params.phase;
+			if (!phase) {
+				const events = readEvents(eventsPath);
+				const spawn = events.find(e => e.type === "agent_spawn" && e.id === params.agentId);
+				phase = spawn ? String(spawn.phase ?? "unknown") : "unknown";
+			}
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_complete", id: params.agentId, tokens: params.tokens ?? 0, phase });
+			return { content: [{ type: "text", text: `OK: Marked ${params.agentId} complete (phase=${phase})` }], details: { ok: true, phase } as Record<string, unknown> };
+		},
+	});
+
+	// ── Tool 4c: mark_agent_failed ─────────────────────
+
+	pi.registerTool({
+		name: "mark_agent_failed",
+		label: "Mark Agent Failed",
+		description: "Record that a spawned agent failed or returned empty. Counts toward completion-ratio but not useful output.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Swarm slug" }),
+			agentId: Type.String({ description: "Agent instance ID" }),
+			reason: Type.Optional(Type.String({ description: "Short failure reason" })),
+			tokens: Type.Optional(Type.Number({ description: "Token usage before failure" })),
+			phase: Type.Optional(Type.String({ description: "Phase the agent ran in" })),
+		}),
+		async execute(_id, params) {
+			const cwd = process.cwd();
+			const swarmDir = getSwarmDir(cwd, params.slug);
+			const eventsPath = getEventsPath(swarmDir);
+			if (!existsSync(eventsPath)) {
+				return { content: [{ type: "text", text: `NO_SWARM: slug '${params.slug}' not initialized.` }], details: { ok: false } as Record<string, unknown> };
+			}
+			let phase = params.phase;
+			if (!phase) {
+				const events = readEvents(eventsPath);
+				const spawn = events.find(e => e.type === "agent_spawn" && e.id === params.agentId);
+				phase = spawn ? String(spawn.phase ?? "unknown") : "unknown";
+			}
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "agent_failed", id: params.agentId, reason: params.reason ?? "", tokens: params.tokens ?? 0, phase });
+			return { content: [{ type: "text", text: `OK: Marked ${params.agentId} failed (phase=${phase}${params.reason ? `, reason=${params.reason}` : ""})` }], details: { ok: true, phase } as Record<string, unknown> };
+		},
+	});
+
 	// ── Tool 5: phase_gate ─────────────────────────────
 
 	pi.registerTool({
 		name: "phase_gate",
+		label: "Phase Gate",
 		description: "REQUIRED before advancing to the next swarm phase. Validates the current phase is complete enough to proceed.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Swarm slug" }),
 			nextPhase: Type.String({ description: "Phase to transition to" }),
 		}),
 		async execute(_id, params) {
-			const PHASE_ORDER = ["scout", "research", "debate", "verify", "build"];
-			const READY_THRESHOLDS: Record<string, number> = { scout: 1.0, research: 0.6, debate: 0.7, verify: 0.8, build: 1.0 };
+			// 6-phase pipeline. `deliver` is the final gate (README/AGENTS). `cross-examine`
+			// and `quality-gate` are documentation-friendly aliases for `debate` and `deliver`.
+			const PHASE_ORDER = ["scout", "research", "debate", "verify", "build", "deliver"];
+			const PHASE_ALIASES: Record<string, string> = {
+				"cross-examine": "debate",
+				"cross-examination": "debate",
+				"quality-gate": "deliver",
+				"quality_gate": "deliver",
+				"deliver-artifact": "deliver",
+			};
+			const READY_THRESHOLDS: Record<string, number> = { scout: 1.0, research: 0.6, debate: 0.7, verify: 0.8, build: 1.0, deliver: 1.0 };
 
 			const cwd = process.cwd();
 			const swarmDir = getSwarmDir(cwd, params.slug);
 			const eventsPath = getEventsPath(swarmDir);
 			const events = readEvents(eventsPath);
+			const nextPhase = PHASE_ALIASES[params.nextPhase] ?? params.nextPhase;
 
-			// Find current phase from ANY phase-related event.
-			// LLM agents log events in varied formats:
-			//   {"type": "phase_start", "phase": "scout"}
-			//   {"event": "phase_complete", "phase": "scout"}
-			//   {"type": "phase_transition", "from": "scout", "phase": "research"}
-			// We must recognize all of these to avoid stuck gates.
+			// Determine current phase. We distinguish three signals:
+			//   - `phase_start` (caller declared the phase open)
+			//   - `phase_transition` (this gate wrote it on a prior APPROVE)
+			//   - `phase_complete` (caller explicitly marked the phase done)
+			// `phase_transition` advances the "current" cursor but does NOT itself count
+			// as "complete" — otherwise the gate's own writes would satisfy its own check.
 			const phaseEvents = events.filter(e => {
 				const eventType = (e.type as string) || (e.event as string) || "";
 				return eventType === "phase_start" || eventType === "phase_transition" || eventType === "phase_complete";
 			});
 
 			let currentPhase = "none";
-			let currentPhaseComplete = false;
+			let explicitlyComplete = false;
 			if (phaseEvents.length > 0) {
 				const last = phaseEvents[phaseEvents.length - 1]!;
 				currentPhase = String(last.phase ?? "none");
 				const lastType = (last.type as string) || (last.event as string) || "";
-				currentPhaseComplete = lastType === "phase_complete" || lastType === "phase_transition";
+				explicitlyComplete = lastType === "phase_complete";
 			}
 
 			const currentIdx = PHASE_ORDER.indexOf(currentPhase);
-			const nextIdx = PHASE_ORDER.indexOf(params.nextPhase);
+			const nextIdx = PHASE_ORDER.indexOf(nextPhase);
 
 			if (nextIdx === -1) {
-				return { content: [{ type: "text", text: `BLOCKED: Unknown phase '${params.nextPhase}'. Valid phases: ${PHASE_ORDER.join(", ")}` }], details: { approved: false } };
+				return { content: [{ type: "text", text: `BLOCKED: Unknown phase '${params.nextPhase}'. Valid phases: ${PHASE_ORDER.join(", ")}` }], details: { approved: false } as Record<string, unknown> };
 			}
 
 			if (nextIdx > currentIdx + 1) {
 				const skipped = PHASE_ORDER.slice(currentIdx + 1, nextIdx).join(", ");
-				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${params.nextPhase}'.` }], details: { approved: false } };
+				return { content: [{ type: "text", text: `BLOCKED: Cannot skip phases. Complete '${skipped}' before advancing to '${nextPhase}'.` }], details: { approved: false } as Record<string, unknown> };
 			}
 
-			// Check readyThreshold for current phase.
-			// If the phase was explicitly completed (phase_complete event), skip the threshold check.
-			if (currentPhase !== "none" && currentIdx >= 0 && !currentPhaseComplete) {
+			// Threshold check: does the current phase have enough completed agents?
+			// Skipped when the caller explicitly emitted `phase_complete` (they know
+			// it's done even if no agents were logged for it).
+			if (currentPhase !== "none" && currentIdx >= 0 && !explicitlyComplete) {
 				const threshold = READY_THRESHOLDS[currentPhase] ?? 0.6;
-				const phaseAgents = events.filter(e => e.type === "agent_spawn" && String(e.phase ?? currentPhase) === currentPhase).length;
-				const agentsFinished = events.filter(e => (e.type === "agent_complete" || e.type === "agent_failed") && String(e.phase ?? currentPhase) === currentPhase).length;
+				// Count spawns + completions tagged to THIS phase specifically.
+				// Require explicit phase tag — if the LLM didn't tag, we fall back to
+				// matching agents that occurred after the current phase's transition.
+				const currentTransitionIdx = events.findIndex(e => e.type === "phase_transition" && String(e.phase ?? "") === currentPhase);
+				const windowStart = currentTransitionIdx === -1 ? 0 : currentTransitionIdx;
+				const windowEvents = events.slice(windowStart);
+				const phaseAgents = windowEvents.filter(e => e.type === "agent_spawn" && String(e.phase ?? currentPhase) === currentPhase).length;
+				const agentsFinished = windowEvents.filter(e => (e.type === "agent_complete" || e.type === "agent_failed") && String(e.phase ?? currentPhase) === currentPhase).length;
 				const completionRate = phaseAgents > 0 ? agentsFinished / phaseAgents : 1.0;
 
 				if (completionRate < threshold) {
-					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish.` }], details: { approved: false, completionRate, threshold } };
+					return { content: [{ type: "text", text: `BLOCKED: Phase '${currentPhase}' is ${Math.round(completionRate * 100)}% complete (need ${Math.round(threshold * 100)}%). Wait for more agents to finish, or emit a phase_complete event for '${currentPhase}'.` }], details: { approved: false, completionRate, threshold, phaseAgents, agentsFinished } as Record<string, unknown> };
 				}
 			}
 
-			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "phase_transition", from: currentPhase, phase: params.nextPhase });
-			return { content: [{ type: "text", text: `APPROVED: Advancing to phase '${params.nextPhase}' (${currentPhase} was ${currentPhase === "none" ? "initial" : "ready"})` }], details: { approved: true, from: currentPhase, to: params.nextPhase } };
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "phase_transition", from: currentPhase, phase: nextPhase });
+			return { content: [{ type: "text", text: `APPROVED: Advancing to phase '${nextPhase}' (${currentPhase} was ${currentPhase === "none" ? "initial" : explicitlyComplete ? "explicitly complete" : "ready"})` }], details: { approved: true, from: currentPhase, to: nextPhase } as Record<string, unknown> };
 		},
 	});
 
@@ -856,6 +965,7 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "deliver_artifact",
+		label: "Deliver Artifact",
 		description: "REQUIRED to finalize a swarm research deliverable. Runs structural citation verification before allowing delivery.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Swarm slug" }),
@@ -865,45 +975,81 @@ export function registerOrchestrationTools(pi: ExtensionAPI): void {
 			const cwd = process.cwd();
 			const swarmDir = getSwarmDir(cwd, params.slug);
 			const eventsPath = getEventsPath(swarmDir);
-			const fullPath = resolve(cwd, params.artifactPath);
+			// Resolve artifact path: try cwd-relative first, then swarm-relative so LLMs
+			// that hand us `build/final.md` work regardless of where `zenith` was launched.
+			let fullPath = resolve(cwd, params.artifactPath);
+			if (!existsSync(fullPath)) {
+				const swarmRelative = resolve(swarmDir, params.artifactPath);
+				if (existsSync(swarmRelative)) fullPath = swarmRelative;
+			}
 
 			if (!existsSync(fullPath)) {
-				return { content: [{ type: "text", text: `DELIVERY_BLOCKED: Artifact not found at ${params.artifactPath}` }], details: { delivered: false } };
+				return { content: [{ type: "text", text: `DELIVERY_BLOCKED: Artifact not found at ${params.artifactPath} (tried ${cwd} and ${swarmDir})` }], details: { delivered: false } as Record<string, unknown> };
 			}
 
 			const content = readFileSync(fullPath, "utf8");
 
-			// Structural citation check
-			const inlineCitations = content.match(/\[(\d+)\]/g) ?? [];
-			const citedNumbers = new Set(inlineCitations.map(c => parseInt(c.replace(/[\[\]]/g, ""), 10)));
-			const hasSourcesSection = /^#+\s*Sources/mi.test(content);
-			const sourceEntries = content.match(/^\d+\.\s/gm) ?? [];
+			// Strip fenced code blocks before extracting citations so `[1]` inside code
+			// doesn't inflate the count.
+			const stripped = content.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]+`/g, "");
+			const inlineMatches = [...stripped.matchAll(/\[(\d+)\]/g)];
+			const citedNumbers = new Set(inlineMatches.map(m => parseInt(m[1], 10)));
+			const hasSourcesSection = /^#{1,4}\s*(Sources|References|Bibliography)\s*$/mi.test(content);
+			// Source entries: `N. ...` or `[N] ...` or `- [N] ...`
+			const sourceEntryRe = /^\s*[-*]?\s*\[?(\d+)\]?[\.\):\s]/gm;
+			const sourceNumbers = new Set<number>();
+			for (const m of content.matchAll(sourceEntryRe)) {
+				sourceNumbers.add(parseInt(m[1], 10));
+			}
 
 			const issues: string[] = [];
-			if (citedNumbers.size === 0) issues.push("No inline citations [N] found");
-			if (!hasSourcesSection) issues.push("No Sources section found");
-			if (sourceEntries.length === 0 && citedNumbers.size > 0) issues.push("Citations exist but Sources section has no numbered entries");
+			if (citedNumbers.size === 0) issues.push("No inline citations [N] found in the body");
+			if (!hasSourcesSection) issues.push("No Sources/References/Bibliography section found");
 			if (content.length < 500) issues.push("Artifact is suspiciously short (<500 chars)");
+
+			// Each inline citation must resolve to a source entry (fatal).
+			const orphanInline = [...citedNumbers].filter(n => !sourceNumbers.has(n));
+			for (const n of orphanInline) {
+				issues.push(`Inline citation [${n}] has no matching entry in Sources section`);
+			}
+			// Each source entry should be referenced by at least one inline citation (major).
+			const orphanSources = [...sourceNumbers].filter(n => !citedNumbers.has(n));
+			for (const n of orphanSources) {
+				issues.push(`Source [${n}] is listed but never referenced in the body`);
+			}
 
 			if (issues.length > 0) {
 				appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivery_blocked", artifact: params.artifactPath, issues });
 				const issueList = issues.map(i => `  - ${i}`).join("\n");
 				return {
 					content: [{ type: "text", text: `DELIVERY_BLOCKED: Fix these issues before delivering:\n${issueList}\n\nRun verify_citations and fix, then call deliver_artifact again.` }],
-					details: { delivered: false, issues },
+					details: { delivered: false, issues } as Record<string, unknown>,
 				};
 			}
 
-			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivered", artifact: params.artifactPath, citations: citedNumbers.size, sources: sourceEntries.length });
+			appendEvent(eventsPath, { ts: new Date().toISOString(), type: "delivered", artifact: params.artifactPath, citations: citedNumbers.size, sources: sourceNumbers.size });
 
-			// Copy final artifact to ~/research/
+			// Copy final artifact to ~/research/, rotating any prior report so it isn't
+			// silently clobbered. Prior report is renamed with an ISO timestamp suffix
+			// derived from its mtime; swarm-work is preserved intact.
 			const researchDir = resolve(process.env.HOME ?? ".", "research");
 			mkdirSync(researchDir, { recursive: true });
 			const baseName = params.slug + ".md";
 			const destPath = resolve(researchDir, baseName);
+			let rotatedPath: string | undefined;
+			if (existsSync(destPath)) {
+				const stat = statSync(destPath);
+				const ts = stat.mtime.toISOString().replace(/[:.]/g, "-");
+				rotatedPath = resolve(researchDir, `${params.slug}.${ts}.md`);
+				copyFileSync(destPath, rotatedPath);
+			}
 			copyFileSync(fullPath, destPath);
 
-			return { content: [{ type: "text", text: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}` }], details: { delivered: true, citations: citedNumbers.size, sources: sourceEntries.length, researchPath: destPath, swarmDir } };
+			const deliveredMsg = rotatedPath
+				? `DELIVERED: Research saved to ~/research/${baseName}\nPrevious version rotated to ${rotatedPath}\nWorking data at ${swarmDir}`
+				: `DELIVERED: Research saved to ~/research/${baseName}\nWorking data at ${swarmDir}`;
+
+			return { content: [{ type: "text", text: deliveredMsg }], details: { delivered: true, citations: citedNumbers.size, sources: sourceNumbers.size, researchPath: destPath, rotatedPath, swarmDir } as Record<string, unknown> };
 		},
 	});
 }

@@ -5,7 +5,8 @@
  *   save_checkpoint  — Persist pipeline state at stage boundaries
  *   load_checkpoint  — Restore state to resume after interruption
  *
- * Checkpoints are stored in outputs/.checkpoints/<slug>/ as JSON.
+ * Checkpoints are stored in ~/.zenith/swarm-work/<slug>/checkpoints/ as JSON,
+ * alongside the rest of the swarm working data for that slug.
  * The prompts instruct the lead agent to save checkpoints at each
  * stage boundary (after plan, after research, after draft, etc.)
  * so a crashed or interrupted pipeline can resume mid-flow.
@@ -14,7 +15,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -31,8 +33,13 @@ interface Checkpoint {
 
 // ── Helpers ────────────────────────────────────────────
 
-function getCheckpointDir(workingDir: string, slug: string): string {
-	return resolve(workingDir, "outputs", ".checkpoints", slug);
+// Checkpoints live alongside the swarm's working data under
+// ~/.zenith/swarm-work/<slug>/checkpoints/. Source-of-truth resolution matches
+// src/config/paths.ts::getSwarmCheckpointDir (duplicated because `extensions/`
+// and `src/` are separate compilation units).
+function getCheckpointDir(_workingDir: string, slug: string): string {
+	const zenithHome = process.env.ZENITH_HOME ?? resolve(process.env.HOME ?? homedir(), ".zenith");
+	return resolve(zenithHome, "swarm-work", slug, "checkpoints");
 }
 
 function getCheckpointPath(dir: string, stage: string): string {
@@ -46,10 +53,11 @@ function getCheckpointPath(dir: string, stage: string): string {
 export function registerPipelineTools(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "save_checkpoint",
+		label: "Save Checkpoint",
 		description:
 			"Save a pipeline checkpoint at the current stage. Use this at stage boundaries " +
 			"(after planning, after research, after drafting, etc.) so the pipeline can " +
-			"resume from this point if interrupted. Checkpoints are stored in outputs/.checkpoints/.",
+			"resume from this point if interrupted. Checkpoints live under ~/.zenith/swarm-work/<slug>/checkpoints/.",
 		
 		parameters: Type.Object({
 			slug: Type.String({ description: "Research slug (e.g., 'scaling-laws')" }),
@@ -117,6 +125,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "load_checkpoint",
+		label: "Load Checkpoint",
 		description:
 			"Load the latest checkpoint for a research slug to resume an interrupted pipeline. " +
 			"Returns the stage, completed work, and artifact paths so you can pick up where you left off.",
@@ -138,7 +147,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
 							type: "text",
 							text: `No checkpoints found for "${params.slug}". Starting fresh.`,
 						},
-					],
+					], details: undefined,
 				};
 			}
 
@@ -156,7 +165,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
 								`No checkpoint found for stage "${params.stage || "latest"}". ` +
 								`Available checkpoints: ${files.map((f) => f.replace(".json", "")).join(", ") || "none"}`,
 						},
-					],
+					], details: undefined,
 				};
 			}
 
@@ -223,7 +232,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
 							type: "text",
 							text: `Error reading checkpoint: ${err.message}`,
 						},
-					],
+					], details: undefined,
 				};
 			}
 		},
