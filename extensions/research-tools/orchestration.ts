@@ -96,76 +96,38 @@ const QUESTION_WORDS = new Set(["what", "when", "who", "where", "how", "which", 
  * Scanned case-insensitively against the raw query text.
  */
 const DOMAIN_KEYWORDS: Record<string, string> = {
-	// AI / ML
-	"neural network":       "transformer-specialist",
-	"transformer":          "transformer-specialist",
-	"attention mechanism":  "transformer-specialist",
-	"large language model": "llm-specialist",
-	"llm":                  "llm-specialist",
-	"gpt":                  "llm-specialist",
-	"diffusion model":      "generative-specialist",
-	"generative ai":        "generative-specialist",
+	// AI / ML (keywords → existing specialist files)
+	"transformer":           "transformer-specialist",
+	"attention mechanism":   "transformer-specialist",
 	"reinforcement learning": "rl-specialist",
-	"machine learning":     "ml-specialist",
-	"deep learning":        "ml-specialist",
-	"computer vision":      "cv-specialist",
-	"image recognition":    "cv-specialist",
-	"object detection":     "cv-specialist",
-	"natural language":     "nlp-specialist",
-	"nlp":                  "nlp-specialist",
-	"speech recognition":   "speech-specialist",
-	"robotics":             "robotics-specialist",
+	"computer vision":       "cv-specialist",
+	"image recognition":     "cv-specialist",
+	"object detection":      "cv-specialist",
+	"natural language":      "nlp-specialist",
+	"nlp":                   "nlp-specialist",
+	"robotics":              "robotics-specialist",
 
 	// Sciences
-	"climate":              "climate-science-specialist",
-	"global warming":       "climate-science-specialist",
-	"gene":                 "genomics-specialist",
-	"genome":               "genomics-specialist",
-	"crispr":               "genomics-specialist",
-	"protein folding":      "protein-specialist",
-	"protein structure":    "protein-specialist",
-	"drug discovery":       "pharma-specialist",
-	"pharmacology":         "pharma-specialist",
-	"neuroscience":         "neuro-specialist",
-	"brain":                "neuro-specialist",
-	"quantum computing":    "quantum-specialist",
-	"quantum":              "quantum-specialist",
-	"astrophysics":         "astro-specialist",
-	"cosmology":            "astro-specialist",
-	"particle physics":     "particle-specialist",
-	"materials science":    "materials-specialist",
-	"battery":              "energy-specialist",
-	"solar energy":         "energy-specialist",
-	"fusion":               "energy-specialist",
-	"ecology":              "ecology-specialist",
-	"biodiversity":         "ecology-specialist",
+	"climate":               "climate-science-specialist",
+	"global warming":        "climate-science-specialist",
+	"gene":                  "genomics-specialist",
+	"genome":                "genomics-specialist",
+	"crispr":                "genomics-specialist",
+	"ecology":               "ecology-specialist",
+	"biodiversity":          "ecology-specialist",
 
 	// Engineering / CS
-	"cryptography":         "crypto-specialist",
-	"blockchain":           "crypto-specialist",
-	"distributed systems":  "distributed-specialist",
-	"database":             "database-specialist",
-	"compiler":             "compiler-specialist",
-	"operating system":     "os-specialist",
-	"cybersecurity":        "security-specialist",
-	"network security":     "security-specialist",
+	"compiler":              "compiler-specialist",
+	"cybersecurity":         "security-specialist",
+	"network security":      "security-specialist",
 
-	// Social sciences / Economics
-	"economics":            "economics-specialist",
-	"monetary policy":      "economics-specialist",
-	"game theory":          "game-theory-specialist",
-	"psychology":           "psychology-specialist",
-	"cognitive science":    "cogsci-specialist",
-	"sociology":            "sociology-specialist",
-	"political science":    "polisci-specialist",
+	// Social sciences
+	"sociology":             "sociology-specialist",
 
-	// Math
-	"topology":             "math-specialist",
-	"algebra":              "math-specialist",
-	"number theory":        "math-specialist",
-	"statistics":           "statistics-specialist",
-	"bayesian":             "statistics-specialist",
-	"optimization":         "optimization-specialist",
+	// Math / methods
+	"statistics":            "statistics-specialist",
+	"bayesian":              "statistics-specialist",
+	"optimization":          "optimization-specialist",
 } as const;
 
 // ── Helpers ────────────────────────────────────────────
@@ -234,11 +196,15 @@ function detectDomains(query: string): string[] {
 	const hits: Array<{ specialist: string; position: number }> = [];
 	const seen = new Set<string>();
 
+	// Word-boundary-aware match: prevents "gene" → "gene*ral*" false positives.
+	// Escape regex metas in the keyword so phrases like "network security" work verbatim.
+	const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	for (const [keyword, specialist] of Object.entries(DOMAIN_KEYWORDS)) {
-		const idx = lowerQuery.indexOf(keyword);
-		if (idx !== -1 && !seen.has(specialist)) {
+		const re = new RegExp(`\\b${escapeRe(keyword)}\\b`, "i");
+		const m = re.exec(lowerQuery);
+		if (m && !seen.has(specialist)) {
 			seen.add(specialist);
-			hits.push({ specialist, position: idx });
+			hits.push({ specialist, position: m.index });
 		}
 	}
 

@@ -51,3 +51,30 @@ describe("classify_intent", () => {
 		assert.deepEqual(a.details, b.details);
 	});
 });
+
+
+describe("classify_intent — domain keyword word boundaries", () => {
+	it("does not match 'gene' inside 'general'", async () => {
+		const tool = loadClassifier();
+		const r = await tool.execute("t", { query: "What is the general theory of relativity?" }, undefined, undefined, {} as any);
+		// "gene" must not match "general" → no genomics-specialist in domains.
+		assert.ok(!r.details.domains.includes("genomics-specialist"), `domains=${JSON.stringify(r.details.domains)}`);
+	});
+	it("matches 'gene' as a whole word", async () => {
+		const tool = loadClassifier();
+		const r = await tool.execute("t", { query: "How does a gene get transcribed?" }, undefined, undefined, {} as any);
+		assert.ok(r.details.domains.includes("genomics-specialist"), `domains=${JSON.stringify(r.details.domains)}`);
+	});
+	it("matches multi-word keywords like 'network security'", async () => {
+		const tool = loadClassifier();
+		const r = await tool.execute("t", { query: "What are the latest results in network security research?" }, undefined, undefined, {} as any);
+		assert.ok(r.details.domains.includes("security-specialist"), `domains=${JSON.stringify(r.details.domains)}`);
+	});
+	it("does not map queries to specialists without agent files", async () => {
+		// 'llm' was removed because we have no llm-specialist.md
+		const tool = loadClassifier();
+		const r = await tool.execute("t", { query: "What is an llm?" }, undefined, undefined, {} as any);
+		// 'llm' is not in DOMAIN_KEYWORDS anymore — should not route to llm-specialist.
+		assert.ok(!r.details.domains.includes("llm-specialist"));
+	});
+});
