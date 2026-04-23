@@ -81,6 +81,26 @@ export function buildPiArgs(options: PiRuntimeOptions): string[] {
 	return args;
 }
 
+// Env vars that collide with Zenith's single-model policy or its budget
+// discipline. We strip these before spawning Pi so a user's ambient shell
+// config (Claude Desktop, other Anthropic integrations) can't silently
+// redirect Zenith's traffic to a different model, or inflate token limits
+// past what the workspace rate plan can sustain.
+const PI_ENV_BLOCKLIST = [
+	"ANTHROPIC_MODEL",          // overrides our pinned model
+	"ANTHROPIC_MAX_TOKENS",     // overrides Pi's default output cap
+	"ANTHROPIC_SMALL_FAST_MODEL", // Claude Code sets this; can re-route "fast" calls
+	"CLAUDE_MODEL",             // alt alias some tools use
+];
+
+function inheritedEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...process.env };
+	for (const key of PI_ENV_BLOCKLIST) {
+		delete env[key];
+	}
+	return env;
+}
+
 export function buildPiEnv(options: PiRuntimeOptions): NodeJS.ProcessEnv {
 	const paths = resolvePiPaths(options.appRoot);
 	const zenithHome = dirname(options.zenithAgentDir);
@@ -92,7 +112,7 @@ export function buildPiEnv(options: PiRuntimeOptions): NodeJS.ProcessEnv {
 	const binPath = binEntries.join(delimiter);
 
 	return {
-		...process.env,
+		...inheritedEnv(),
 		PATH: `${binPath}${delimiter}${currentPath}`,
 		ZENITH_VERSION: options.zenithVersion,
 		ZENITH_SESSION_DIR: options.sessionDir,

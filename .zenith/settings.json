@@ -17,5 +17,6 @@
   ],
   "quietStartup": true,
   "collapseChangelog": true,
-  "defaultModel": "anthropic/claude-opus-4-6"
+  "defaultModel": "anthropic/claude-opus-4-6",
+  "defaultProvider": "anthropic"
 }

@@ -70,6 +70,41 @@ test("buildPiEnv wires Zenith paths into the Pi environment", () => {
 	}
 });
 
+test("buildPiEnv strips ANTHROPIC_MODEL and related collide-with-pin env vars", () => {
+	const saved = {
+		model: process.env.ANTHROPIC_MODEL,
+		maxTokens: process.env.ANTHROPIC_MAX_TOKENS,
+		smallFast: process.env.ANTHROPIC_SMALL_FAST_MODEL,
+		claude: process.env.CLAUDE_MODEL,
+	};
+	process.env.ANTHROPIC_MODEL = "claude-rogue-3.5";
+	process.env.ANTHROPIC_MAX_TOKENS = "128000";
+	process.env.ANTHROPIC_SMALL_FAST_MODEL = "claude-haiku-4-5";
+	process.env.CLAUDE_MODEL = "claude-whatever";
+
+	try {
+		const env = buildPiEnv({
+			appRoot: "/repo/zenith",
+			workingDir: "/workspace",
+			sessionDir: "/sessions",
+			zenithAgentDir: "/home/.zenith/agent",
+			zenithVersion: "0.1.5",
+		});
+
+		assert.equal(env.ANTHROPIC_MODEL, undefined, "ANTHROPIC_MODEL must not leak into Pi env");
+		assert.equal(env.ANTHROPIC_MAX_TOKENS, undefined, "ANTHROPIC_MAX_TOKENS must not leak");
+		assert.equal(env.ANTHROPIC_SMALL_FAST_MODEL, undefined, "ANTHROPIC_SMALL_FAST_MODEL must not leak");
+		assert.equal(env.CLAUDE_MODEL, undefined, "CLAUDE_MODEL must not leak");
+		// Caller process.env is untouched (we only strip from the child env).
+		assert.equal(process.env.ANTHROPIC_MODEL, "claude-rogue-3.5");
+	} finally {
+		if (saved.model === undefined) delete process.env.ANTHROPIC_MODEL; else process.env.ANTHROPIC_MODEL = saved.model;
+		if (saved.maxTokens === undefined) delete process.env.ANTHROPIC_MAX_TOKENS; else process.env.ANTHROPIC_MAX_TOKENS = saved.maxTokens;
+		if (saved.smallFast === undefined) delete process.env.ANTHROPIC_SMALL_FAST_MODEL; else process.env.ANTHROPIC_SMALL_FAST_MODEL = saved.smallFast;
+		if (saved.claude === undefined) delete process.env.CLAUDE_MODEL; else process.env.CLAUDE_MODEL = saved.claude;
+	}
+});
+
 test("resolvePiPaths includes the Promise.withResolvers polyfill path", () => {
 	const paths = resolvePiPaths("/repo/zenith");
 

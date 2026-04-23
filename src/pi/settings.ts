@@ -44,27 +44,16 @@ export function normalizeThinkingLevel(value: string | undefined): ThinkingLevel
 	return undefined;
 }
 
+// Single-model policy: Zenith is pinned to one provider/model pair. If it's
+// available in the user's auth, we pick it. If not, we still pick it (so
+// `zenith model set` / `zenith doctor` surface an accurate "model missing"
+// diagnostic) — the caller can override with `--model` or ZENITH_MODEL.
 function choosePreferredModel(
 	availableModels: Array<{ provider: string; id: string }>,
 ): { provider: string; id: string } | undefined {
-	const preferences = [
-		{ provider: "anthropic", id: "claude-opus-4-6" },
-		{ provider: "anthropic", id: "claude-opus-4-5" },
-		{ provider: "anthropic", id: "claude-sonnet-4-5" },
-		{ provider: "openai", id: "gpt-5.4" },
-		{ provider: "openai", id: "gpt-5" },
-	];
-
-	for (const preferred of preferences) {
-		const match = availableModels.find(
-			(model) => model.provider === preferred.provider && model.id === preferred.id,
-		);
-		if (match) {
-			return match;
-		}
-	}
-
-	return availableModels[0];
+	const pinned = { provider: "anthropic", id: "claude-opus-4-6" };
+	const match = availableModels.find((m) => m.provider === pinned.provider && m.id === pinned.id);
+	return match ?? pinned;
 }
 
 export function readJson(path: string): Record<string, unknown> {

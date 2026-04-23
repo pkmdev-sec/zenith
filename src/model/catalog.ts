@@ -50,54 +50,18 @@ const PROVIDER_LABELS: Record<string, string> = {
 	"azure-openai-responses": "Azure OpenAI Responses",
 };
 
+// ── Single-model pin ───────────────────────────────────────────────────
+// Zenith is locked to one model everywhere. Swap the two values below when
+// Anthropic ships a newer Opus (e.g., claude-opus-4-7). Every preference list,
+// fallback chooser, and subagent dispatch collapses through this constant.
+export const SINGLE_MODEL_PROVIDER = "anthropic";
+export const SINGLE_MODEL_ID = "claude-opus-4-6";
+export const SINGLE_MODEL_SPEC = `${SINGLE_MODEL_PROVIDER}/${SINGLE_MODEL_ID}`;
+
 const RESEARCH_MODEL_PREFERENCES = [
 	{
-		spec: "anthropic/claude-opus-4-6",
-		reason: "strong long-context reasoning for source-heavy research work",
-	},
-	{
-		spec: "anthropic/claude-opus-4-5",
-		reason: "strong long-context reasoning for source-heavy research work",
-	},
-	{
-		spec: "anthropic/claude-sonnet-4-6",
-		reason: "balanced reasoning and speed for iterative research sessions",
-	},
-	{
-		spec: "anthropic/claude-sonnet-4-5",
-		reason: "balanced reasoning and speed for iterative research sessions",
-	},
-	{
-		spec: "openai/gpt-5.4",
-		reason: "strong general reasoning and drafting quality for research tasks",
-	},
-	{
-		spec: "openai/gpt-5",
-		reason: "strong general reasoning and drafting quality for research tasks",
-	},
-	{
-		spec: "openai-codex/gpt-5.4",
-		reason: "strong research + coding balance when Pi exposes Codex directly",
-	},
-	{
-		spec: "google/gemini-3-pro-preview",
-		reason: "good fallback for broad web-and-doc research work",
-	},
-	{
-		spec: "google/gemini-2.5-pro",
-		reason: "good fallback for broad web-and-doc research work",
-	},
-	{
-		spec: "openrouter/openai/gpt-5.1-codex",
-		reason: "good routed fallback when only OpenRouter is configured",
-	},
-	{
-		spec: "zai/glm-5",
-		reason: "good fallback when GLM is the available research model",
-	},
-	{
-		spec: "kimi-coding/kimi-k2-thinking",
-		reason: "good fallback when Kimi is the available research model",
+		spec: SINGLE_MODEL_SPEC,
+		reason: "Zenith is pinned to a single model for rate-limit consistency.",
 	},
 ];
 
